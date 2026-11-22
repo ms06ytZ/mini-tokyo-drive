@@ -1,0 +1,2860 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mini Tokyo Drive — 東京ドライビングシミュレータ</title>
+<!-- MapLibre GL JS (BSD-3) / three.js (MIT) / 地図: OpenFreeMap © OpenMapTiles © OpenStreetMap contributors -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9fb8d0; font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+  #map { position: absolute; inset: 0; }
+  .hud { position: absolute; z-index: 20; color: #fff; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  #speedo { right: 24px; bottom: 34px; text-align: right; background: rgba(10,14,22,.6); border-radius: 14px; padding: 12px 18px 10px;
+    border: 1px solid rgba(255,255,255,.1); min-width: 170px; }
+  #speedo .v { font-size: 56px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #speedo .u { font-size: 14px; color: #aab4c8; margin-left: 4px; }
+  #speedo .row { display: flex; justify-content: space-between; font-size: 12px; color: #aab4c8; margin-top: 6px; gap: 12px; }
+  #speedo .gear { font-size: 22px; font-weight: 800; color: #ffd166; }
+  #rpmbar { height: 5px; background: rgba(255,255,255,.12); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  #rpmbar div { height: 100%; width: 0; background: linear-gradient(90deg,#2ec4b6,#ffd166 70%,#e63946); }
+  #help { right: 24px; bottom: 176px; font-size: 12px; line-height: 1.7; background: rgba(10,14,22,.6); padding: 10px 14px;
+    border-radius: 10px; border: 1px solid rgba(255,255,255,.1); }
+  #help b { display: inline-block; min-width: 64px; color: #ffd166; }
+  #topbar { left: 50%; top: 12px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    pointer-events: auto; width: max-content; max-width: calc(100% - 660px); }
+  #topbar select, #topbar button { background: rgba(10,14,22,.78); color: #fff; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  /* 目的地の入力(住所・地名)と候補リスト */
+  #destBox { position: relative; }
+  #destInput { width: 230px; background: rgba(10,14,22,.78); color: #fff; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; outline: none; }
+  #destInput:focus { border-color: #ffd166; }
+  #destInput::placeholder { color: #c3cbe0; }
+  #destList { position: absolute; top: 100%; left: 0; margin: 4px 0 0; padding: 4px 0; list-style: none; width: 340px; max-height: 340px;
+    overflow-y: auto; background: rgba(14,18,28,.97); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; z-index: 30; text-shadow: none; }
+  #destList li { padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #destList li:hover, #destList li.act { background: rgba(255,209,102,.18); }
+  #destList li small { display: block; color: #8f9ab3; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+  #destList li.head { color: #ffd166; font-size: 11px; cursor: default; padding: 4px 12px 2px; background: none; }
+  #destList li.info { color: #aab4c8; cursor: default; background: none; font-size: 12px; }
+  #toast { left: 50%; top: 30%; transform: translate(-50%,-50%); font-size: 30px; font-weight: 800; opacity: 0; transition: opacity .25s; }
+  #title { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; cursor: pointer;
+    background: radial-gradient(ellipse at 50% 40%, rgba(15,22,38,.55), rgba(8,11,18,.88)); color: #fff; text-align: center; }
+  #title h1 { margin: 0; font-size: 44px; letter-spacing: .06em; }
+  #title h1 span { color: #e63946; }
+  #title p { color: #c3cbe0; margin: 10px 0 0; }
+  #title .go { margin-top: 26px; display: inline-block; padding: 12px 34px; border-radius: 10px; background: #e63946; font-weight: 800; letter-spacing: .1em; }
+  #title .go.wait { background: #4a5368; }
+  .hidden { display: none !important; }
+
+  /* ---- ミュージックプレイヤー(画面右) ---- */
+  #player { right: 16px; top: 12px; width: 280px; max-height: calc(100% - 460px); min-height: 0; display: flex; flex-direction: column;
+    pointer-events: auto; background: rgba(10,14,22,.72); border: 1px solid rgba(255,255,255,.12); border-radius: 12px;
+    padding: 10px 12px; font-size: 12px; box-sizing: border-box; }
+  #player button { background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.18); border-radius: 7px;
+    padding: 4px 8px; font-size: 13px; cursor: pointer; }
+  #player button:hover { background: rgba(255,255,255,.18); }
+  #player button.on { background: rgba(255,209,102,.25); border-color: #ffd166; }
+  #player .ph { display: flex; justify-content: space-between; align-items: center; font-weight: 800; letter-spacing: .08em; color: #ffd166; }
+  #player .ph button { padding: 0 8px; }
+  #player .pbody { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; min-height: 0; }
+  #player.folded .pbody { display: none; }
+  #player .folder { display: flex; align-items: center; gap: 8px; }
+  #plFolder { color: #aab4c8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  #plFolder.link { color: #7cc6ff; cursor: pointer; text-decoration: underline; }
+  #plTitle { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #player .seek, #player .vol { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; color: #aab4c8; }
+  #player input[type=range] { flex: 1; accent-color: #ffd166; min-width: 0; }
+  #player .ctrl { display: flex; justify-content: center; gap: 6px; }
+  #player .ctrl button { min-width: 38px; }
+  #plList { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1; max-height: 260px;
+    border-top: 1px solid rgba(255,255,255,.1); }
+  #plList li { padding: 5px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c3cbe0;
+    border-bottom: 1px solid rgba(255,255,255,.05); }
+  #plList li:hover { background: rgba(255,255,255,.08); }
+  #plList li.cur { color: #ffd166; font-weight: 700; }
+  #plList li .n { display: inline-block; min-width: 26px; color: #6f7a93; }
+
+  /* ---- スマホ(画面左上):配達アプリ「まちデリ」 ---- */
+  #phone { left: 16px; top: 12px; width: 300px; pointer-events: auto; background: #0e1116; border-radius: 28px; padding: 8px;
+    border: 2px solid #2c323e; box-shadow: 0 8px 28px rgba(0,0,0,.45); text-shadow: none; color: #14171c; }
+  #phone .screen { border-radius: 21px; overflow: hidden; background: #f4f5f7; display: flex; flex-direction: column; }
+  #phone .pstatus { display: flex; justify-content: space-between; padding: 5px 16px 3px; font-size: 11px; font-weight: 700; background: #fff; }
+  #phone .papp { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 10px; background: #fff;
+    border-bottom: 1px solid #e3e6eb; }
+  #phone .logo { font-weight: 900; color: #ff6a00; font-size: 15px; letter-spacing: .02em; }
+  #appEarn { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; }
+  #onlineBtn { border: none; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 800; cursor: pointer;
+    background: #d9dde3; color: #3b4250; }
+  #onlineBtn.on { background: #12b76a; color: #fff; }
+  #minimap { position: relative; height: 210px; overflow: hidden; background: #dfe6ee; }
+  #miniMap { position: absolute; inset: 0; cursor: crosshair; }
+  #sheet { padding: 10px 12px; min-height: 96px; font-size: 12px; background: #fff; }
+  #sheet .sh-badge { display: inline-block; font-size: 10px; font-weight: 800; color: #fff; background: #ff6a00; border-radius: 999px; padding: 2px 8px; }
+  #sheet .sh-badge.ok { background: #12b76a; }
+  #sheet .sh-badge.blue { background: #2f80ff; }
+  #sheet .sh-t { font-size: 15px; font-weight: 800; margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sheet .sh-s { color: #5c6575; margin-top: 2px; }
+  #sheet .sh-s.warn { color: #d92d20; font-weight: 700; }
+  #sheet .sh-price { font-size: 26px; font-weight: 900; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  #sheet .sh-row { display: flex; justify-content: space-between; gap: 8px; margin-top: 3px; }
+  #sheet .sh-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sheet .sh-row span:last-child { color: #5c6575; flex: none; font-variant-numeric: tabular-nums; }
+  #sheet .late { color: #d92d20; }
+  #sheet .bar { height: 5px; background: #e8ebf0; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  #sheet .bar div { height: 100%; width: 0; background: #ff6a00; }
+  #sheet .bar.hold div { background: #12b76a; }
+  #sheet .sh-btns { display: flex; gap: 8px; margin-top: 8px; }
+  #sheet button { flex: 1; border: none; border-radius: 10px; padding: 8px; font-size: 13px; font-weight: 800; cursor: pointer;
+    background: #e8ebf0; color: #3b4250; }
+  #sheet button.primary { background: #ff6a00; color: #fff; }
+  #sheet .sh-stars { color: #f5a524; font-size: 18px; letter-spacing: 2px; }
+  #sheet .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid #ffb27a; border-top-color: #ff6a00; border-radius: 50%;
+    margin-right: 6px; animation: spin 0.9s linear infinite; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #appStats { padding: 6px 12px 8px; font-size: 11px; color: #5c6575; background: #fff; border-top: 1px solid #eef0f3; }
+  #vsel { display: flex; gap: 12px; justify-content: center; margin-top: 22px; }
+  #vsel button { width: 128px; padding: 12px 8px; border-radius: 12px; border: 2px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06);
+    color: #fff; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 13px; }
+  #vsel button .e { font-size: 34px; line-height: 1.1; }
+  #vsel button small { color: #aab4c8; font-size: 11px; }
+  #vsel button.sel { border-color: #ffd166; background: rgba(255,209,102,.16); }
+  /* ---- 空のじゃま者(カラス・怪獣) ---- */
+  #kaijuHud { left: 50%; bottom: 34px; transform: translateX(-50%); width: 380px; text-align: center; pointer-events: none;
+    background: rgba(70,0,0,.78); border: 2px solid #ff4d4d; border-radius: 10px; padding: 8px 12px; animation: kblink 1.2s ease-in-out infinite; }
+  @keyframes kblink { 50% { border-color: #ffb02e; } }
+  #kaijuHud .kt { font-weight: 900; color: #ffd166; font-size: 14px; letter-spacing: .04em; }
+  #kDist { color: #fff; font-weight: 600; margin-left: 6px; font-size: 12px; }
+  #kaijuHud .khp { height: 10px; background: rgba(255,255,255,.15); border-radius: 5px; margin: 6px 0 4px; overflow: hidden; }
+  #kHp { height: 100%; width: 100%; background: linear-gradient(90deg,#ff3b3b,#ffb02e); transition: width .15s; }
+  #kaijuHud .ks { font-size: 11px; color: #ffd0d0; }
+  #lockon { position: absolute; z-index: 19; width: 64px; height: 64px; margin: -34px 0 0 -34px; border: 2px solid #ff3b3b;
+    border-radius: 50%; pointer-events: none; box-shadow: 0 0 12px rgba(255,59,59,.8); }
+  #lockon::after { content: 'LOCK'; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px;
+    color: #ff3b3b; font: 800 11px system-ui, sans-serif; letter-spacing: .2em; text-shadow: 0 1px 2px #000; }
+  #lockon.free { border-color: rgba(255,255,255,.6); box-shadow: none; border-style: dashed; }
+  #lockon.free::after { content: ''; }
+  #splat { position: absolute; inset: 0; z-index: 18; pointer-events: none; opacity: 0; transition: opacity 3.5s ease-in; }
+  #splat.show { opacity: 1; transition: none; }
+  #splat i { position: absolute; border-radius: 50%;
+    background: radial-gradient(circle at 42% 38%, #fff 0 30%, #ecebdf 52%, rgba(225,224,205,.85) 62%, rgba(200,200,180,0) 72%); }
+
+  #vsel .sil { filter: brightness(0) drop-shadow(0 0 6px rgba(124,198,255,.95)); }
+  #vsel button.secret b { letter-spacing: .3em; color: #7cc6ff; }
+  #miniCar { position: absolute; left: 50%; top: 50%; z-index: 2; pointer-events: none; line-height: 0;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+  #minimap .mbtns { position: absolute; top: 6px; left: 6px; z-index: 3; }
+  #minimap button { background: rgba(10,14,22,.78); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 7px;
+    padding: 3px 8px; font-size: 12px; cursor: pointer; }
+  #minimap .mhint { position: absolute; right: 6px; top: 9px; z-index: 3; font-size: 10px; color: #fff; pointer-events: none;
+    background: rgba(10,14,22,.6); padding: 2px 6px; border-radius: 5px; }
+  #minimap .maplibregl-ctrl-attrib { font-size: 9px; }
+  #nav { background: #1d2430; color: #fff; padding: 8px 12px; }
+  #nav .nrow { display: flex; align-items: center; gap: 12px; }
+  #navArrow { font-size: 38px; line-height: 1; width: 46px; text-align: center; color: #7cc6ff; font-weight: 800; }
+  #navDist { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #navText { font-size: 15px; font-weight: 700; color: #ffd166; }
+  #navRoad { font-size: 12px; color: #c3cbe0; margin-top: 4px; min-height: 1em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #nav .nfoot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: #aab4c8; gap: 6px; }
+  #nav .nfoot.off { color: #ff8a8a; }
+  #nav button { background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.18); border-radius: 7px;
+    padding: 3px 8px; font-size: 12px; cursor: pointer; }
+  .destpin { font-size: 28px; line-height: 1; filter: drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+  .destpin.small { font-size: 20px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="title">
+  <div>
+    <h1>MINI TOKYO <span>DRIVE</span></h1>
+    <p>東京の街を走って、料理を届けよう</p>
+    <div id="vsel">
+      <button data-v="scooter"><span class="e">🛵</span><b>バイク(原付)</b><small>小回り・配達の定番</small></button>
+      <button data-v="bicycle"><span class="e">🚲</span><b>自転車</b><small>のんびり・エコ</small></button>
+      <button data-v="car"><span class="e">🚗</span><b>ミニ</b><small>速い・ドリフト</small></button>
+      <button data-v="flycar" class="secret"><span class="e sil">🚗</span><b>???</b><small>シークレット</small></button>
+    </div>
+    <div class="go wait" id="goBtn">地図を読み込み中…</div>
+    <p id="loadMsg" style="font-size:12px;color:#8f9ab3"></p>
+  </div>
+</div>
+
+<div id="topbar" class="hud">
+  <button id="homeBtn" title="タイトルに戻る (Esc)">🏠 タイトル</button>
+  <select id="spotSel" title="ワープ"><option value="">📍 ワープ先…</option></select>
+  <div id="destBox">
+    <input id="destInput" type="text" placeholder="🏁 目的地(住所・地名 → Enter)" autocomplete="off" title="東京都内の住所・地名を入力して Enter">
+    <ul id="destList" class="hidden"></ul>
+  </div>
+  <select id="vehSel" title="乗り物 (X)"></select>
+  <button id="camBtn" title="カメラ切替 (C)">🎥 追従</button>
+  <button id="colBtn" title="建物との衝突 (B)">🏢 衝突 ON</button>
+  <button id="routeBtn" title="メイン画面のルート線 (G)">🛣 ルート OFF</button>
+</div>
+<div id="speedo" class="hud">
+  <div><span class="v" id="spd">0</span><span class="u">km/h</span></div>
+  <div id="rpmbar"><div></div></div>
+  <div class="row"><span><span id="gearLbl">GEAR</span> <span class="gear" id="gear">N</span></span><span id="odo">0.00 km</span></div>
+</div>
+<div id="help" class="hud">
+  <div><b>↑ / W</b>アクセル</div>
+  <div><b>↓ / S</b>ブレーキ・バック</div>
+  <div><b>← → / A D</b>ハンドル</div>
+  <div><b>Space</b>サイドブレーキ(ドリフト)</div>
+  <div><b>C</b>カメラ切替 ・ ホイールでズーム</div>
+  <div><b>L</b>ライト ・ B 衝突 ・ M 音 ・ R リセット</div>
+  <div><b>K</b>ホーン / ベル ・ X 乗り物 ・ G ルート線</div>
+  <div><b>F / V</b>上昇 / 下降(空飛ぶ車)</div>
+  <div><b>E</b>ロケット発射(怪獣の出現中)</div>
+  <div><b>O</b>配達 オンライン/オフライン ・ Enter 注文を受ける</div>
+  <div><b>P / N</b>音楽 再生・停止 / 次の曲</div>
+  <div><b>ナビ</b>上の 🏁 に住所・地名を入力 / スマホの地図をクリック</div>
+  <div><b>Esc</b>タイトルに戻る</div>
+  <div><b>H</b>このヘルプを隠す</div>
+</div>
+<div id="toast" class="hud"></div>
+<div id="kaijuHud" class="hud hidden">
+  <div class="kt">⚠ 大怪獣ガルザウルス 出現中<span id="kDist"></span></div>
+  <div class="khp"><div id="kHp"></div></div>
+  <div class="ks">E でロケット発射(長押しで連射)・ 非常線の内側には入れません</div>
+</div>
+<div id="lockon" class="hidden"></div>
+<div id="splat"></div>
+
+<div id="phone" class="hud"><div class="screen">
+<div class="pstatus"><span id="phClock">12:00</span><span>📶 5G 🔋</span></div>
+<div class="papp"><span class="logo">🛵 まちデリ</span><span id="appEarn">¥0</span><button id="onlineBtn" title="オンライン切替 (O)">オフライン</button></div>
+<div id="minimap">
+  <div id="miniMap"></div>
+  <div id="miniCar"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M12 2 L20 21 L12 16.5 L4 21 Z" fill="#2f80ff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
+  <div class="mbtns"><button id="miniNorth" title="地図の向きを切替">🧭 進行方向が上</button></div>
+  <div class="mhint">クリックで目的地</div>
+</div>
+<div id="nav" class="hidden">
+  <div class="nrow">
+    <div id="navArrow">↑</div>
+    <div><div id="navDist">--</div><div id="navText">ルート検索中…</div></div>
+  </div>
+  <div id="navRoad"></div>
+  <div class="nfoot" id="navFoot"><span id="navRemain"></span>
+    <span><button id="navVoice" title="音声案内">🔊</button> <button id="navEnd" title="案内を終了">✕ 終了</button></span></div>
+</div>
+<div id="sheet"></div>
+<div id="appStats"></div>
+</div></div>
+
+<div id="player" class="hud">
+  <div class="ph"><span>🎵 MUSIC</span><button id="plFold" title="折りたたむ">–</button></div>
+  <div class="pbody">
+    <div class="folder"><button id="plPick" title="MP3 / MP4 のあるフォルダを選択">📁 フォルダ</button><span id="plFolder">未選択</span></div>
+    <div id="plTitle">—</div>
+    <div class="seek"><span id="plCur">0:00</span><input type="range" id="plSeek" min="0" max="1000" value="0"><span id="plDur">0:00</span></div>
+    <div class="ctrl">
+      <button id="plShuf" title="シャッフル">🔀</button>
+      <button id="plPrev" title="前の曲">⏮</button>
+      <button id="plPlay" title="再生 / 一時停止 (P)">▶</button>
+      <button id="plNext" title="次の曲 (N)">⏭</button>
+      <button id="plRep" title="リピート">🔁</button>
+    </div>
+    <div class="vol"><span>🔈</span><input type="range" id="plVol" min="0" max="100" value="70"></div>
+    <ol id="plList"></ol>
+  </div>
+  <input type="file" id="plFiles" webkitdirectory multiple hidden>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* =====================================================================
+ * 設定
+ * ===================================================================== */
+const CONFIG = {
+  // 地図スタイル(OpenFreeMap: 無料・キー不要)。'liberty' / 'bright' / 'positron' など
+  styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
+
+  start: { lng: 139.7648, lat: 35.6813, heading: 270 },   // 行幸通り(東京駅前)
+
+  // ---- ミュージックプレイヤー ----
+  // HTTP で配信している場合のみ有効。このHTMLからの相対パス(例: 'music/')。
+  // サーバーのディレクトリ一覧(python -m http.server など)から MP3/MP4 を拾う。
+  // 空なら画面右の「📁 フォルダ」ボタンで選んだフォルダを使う(前回のフォルダは記憶される)
+  musicFolderUrl: '',
+  musicVolume: 0.7,
+
+  // ---- ミニマップ・ナビ ----
+  miniStyleUrl: 'https://tiles.openfreemap.org/styles/bright',   // 左上の地図
+  miniZoom: 15.5,
+  // 経路検索(OSRM)。公開デモサーバーは軽い利用のみ可。自前の OSRM サーバーがあれば差し替え
+  routerUrl: 'https://router.project-osrm.org/route/v1/driving',
+  offRouteMeters: 35,        // ルートからこれ以上離れたら再検索
+  showRouteOnMain: false,    // メイン画面にもルート線を描くか(G キー / 🛣 ボタンで切替・記憶される)
+
+  defaultVehicle: 'scooter', // 'scooter' | 'bicycle' | 'car' | 'flycar'
+
+  // ---- 空のじゃま者(空飛ぶミニのときだけ) ----
+  flyHazards: true,          // カラスと怪獣を出すか
+  kaijuFirstDelay: 30,       // 飛行開始から最初の怪獣まで(秒)
+  kaijuInterval: [90, 150],  // 怪獣が去って/倒してから次が出るまで(秒)
+  kaijuBonus: 5000,          // 撃退ボーナス(円)
+
+  // 見た目の拡大率(地図カメラが寄り切れないため)。物理・衝突は実寸
+  carScale: 2.4,
+
+  // ---- 車モデル差し替え用(glTF/GLB) ----
+  // 「Y が上、前方が -Z、1 単位 = 1m」想定。違う場合は補正値で調整
+  carModelUrl: '',
+  carModelRotationY: 0,      // 前方が +Z のモデルなら Math.PI
+  carModelScale: 1,
+  carModelOffsetY: 0,
+  carModelWheelNames: { fl: '', fr: '', rl: '', rr: '' },
+
+  // ---- 走行性能 ----
+  maxSpeedKmh: 180, maxReverseKmh: 25,
+  accel: 6.5, brake: 13, reverseAccel: 3.5,
+  wheelbase: 2.5, maxSteer: 0.6, minSteer: 0.09,
+  grip: 11, handbrakeGrip: 1.4, length: 3.85,
+
+  // ---- カメラ ----
+  cameraModes: [
+    { name: '追従', zoom: 20.6, pitch: 74, pad: 0.42 },
+    { name: '遠景', zoom: 19.2, pitch: 66, pad: 0.30 },
+    { name: '真上', zoom: 19.6, pitch: 0,  pad: 0.00 },
+    { name: '低空', zoom: 21.3, pitch: 82, pad: 0.50 },
+  ],
+};
+
+/* ---- 乗り物 ----
+ * 走行性能(physics が読む)・見た目・音をまとめたもの。
+ * scale: 見た目の拡大率 / camZoom: カメラを寄せる量 / lean: 二輪のバンク角の上限(rad, 0 なら車のロール)
+ * gears: 変速点 km/h(null なら CVT 表示 'D') / engine: エンジン音(null なら無音) / avgKmh: 配達の制限時間の目安 */
+const VEHICLES = {
+  scooter: {
+    name: 'バイク(原付)', icon: '🛵', build: (T) => buildScooter(T),
+    maxSpeedKmh: 75, maxReverseKmh: 4, accel: 5.2, brake: 10, reverseAccel: 1.0,
+    wheelbase: 1.3, maxSteer: 0.7, minSteer: 0.07, grip: 13, handbrakeGrip: 3.5, length: 1.9,
+    scale: 3.0, camZoom: 0.45, lean: 0.6, shadow: [1.2, 2.6],
+    gears: null, idleRpm: 1800, maxRpm: 9000,
+    engine: { div: 22, sub: 1.0, filter: 900, filterMul: 0.35, gain: 0.028, type: 'square' },
+    horn: 'beep-high', avgKmh: 26,
+  },
+  bicycle: {
+    name: '自転車', icon: '🚲', build: (T) => buildBicycle(T),
+    maxSpeedKmh: 32, maxReverseKmh: 3, accel: 2.4, brake: 6.5, reverseAccel: 0.8,
+    wheelbase: 1.05, maxSteer: 0.85, minSteer: 0.14, grip: 14, handbrakeGrip: 4, length: 1.75,
+    scale: 3.2, camZoom: 0.6, lean: 0.45, shadow: [1.0, 2.3],
+    gears: [0, 7, 12, 17, 22, 27, 999], idleRpm: 0, maxRpm: 120,   // rpm = ケイデンス
+    engine: null, horn: 'bell', avgKmh: 15,
+  },
+  car: {
+    name: 'ミニ', icon: '🚗', build: (T) => buildMiniCar(T),
+    maxSpeedKmh: CONFIG.maxSpeedKmh, maxReverseKmh: CONFIG.maxReverseKmh, accel: CONFIG.accel, brake: CONFIG.brake,
+    reverseAccel: CONFIG.reverseAccel, wheelbase: CONFIG.wheelbase, maxSteer: CONFIG.maxSteer, minSteer: CONFIG.minSteer,
+    grip: CONFIG.grip, handbrakeGrip: CONFIG.handbrakeGrip, length: CONFIG.length,
+    scale: CONFIG.carScale, camZoom: 0, lean: 0, shadow: [2.4, 4.8],
+    gears: [0, 22, 45, 75, 110, 145, 999], idleRpm: 900, maxRpm: 7000,
+    engine: { div: 30, sub: 0.5, filter: 400, filterMul: 0.25, gain: 0.035, type: 'sawtooth' },
+    horn: 'beep', avgKmh: 28,
+  },
+  // 空飛ぶミニ:スタートでジェット噴射 → 浮上 → タイヤ収納。F 上昇 / V 下降。高度 car.alt(m)
+  flycar: {
+    name: '空飛ぶミニ', icon: '🛸', build: (T) => buildFlyCar(T), fly: true,
+    maxSpeedKmh: 220, maxReverseKmh: 30, accel: 8, brake: 12, reverseAccel: 4,
+    wheelbase: 2.5, maxSteer: 0.55, minSteer: 0.1, grip: 6, handbrakeGrip: 1.2, length: 3.85,
+    scale: CONFIG.carScale, camZoom: 0, lean: 0.4, shadow: [2.4, 4.8],
+    gears: null, idleRpm: 3000, maxRpm: 12000,
+    engine: { div: 6, sub: 1.5, filter: 2200, filterMul: 0.08, gain: 0.012, type: 'sine', jet: true },
+    horn: 'beep', avgKmh: 60,
+    hoverAlt: 5,            // 離陸直後に浮く高さ(m)
+    gearUpAlt: 2.5,         // これより高いとタイヤを収納
+    maxAlt: 600, climb: 12, // 上昇・下降の加速度(m/s²)
+  },
+};
+let vehicleId = (() => { try { const v = localStorage.getItem('mtd-vehicle'); if (VEHICLES[v]) return v; } catch (e) {} return CONFIG.defaultVehicle; })();
+let V = VEHICLES[vehicleId];
+
+const SPOTS = [
+  { name: '東京駅 丸の内(行幸通り)', lng: 139.7648, lat: 35.6813, heading: 270 },
+  { name: '銀座四丁目交差点',         lng: 139.7653, lat: 35.6716, heading: 225 },
+  { name: '渋谷スクランブル交差点',   lng: 139.7005, lat: 35.6596, heading: 300 },
+  { name: '新宿 西口(都庁方面)',      lng: 139.6965, lat: 35.6905, heading: 260 },
+  { name: '東京タワー',               lng: 139.7465, lat: 35.6575, heading: 330 },
+  { name: '秋葉原 中央通り',           lng: 139.7714, lat: 35.6985, heading: 180 },
+  { name: '皇居 内堀通り',             lng: 139.7590, lat: 35.6830, heading: 0 },
+  { name: '芝浦(レインボーブリッジ方面)', lng: 139.7555, lat: 35.6400, heading: 120 },
+  { name: '浅草 雷門',                 lng: 139.7967, lat: 35.7110, heading: 180 },
+];
+
+/* ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const DEG = Math.PI / 180;
+const M_PER_DEG_LAT = 111132.9;
+const mPerDegLng = (lat) => 111319.5 * Math.cos(lat * DEG);
+const lerpAngleDeg = (a, b, t) => a + ((((b - a + 540) % 360) + 360) % 360 - 180) * t;
+let toastTimer;
+function toast(msg, ms = 900) {
+  const t = $('toast'); t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.style.opacity = 0), ms);
+}
+
+function buildMiniCar(THREE) {
+  const car = new THREE.Group();
+  const body = new THREE.Group();   // ロール・ピッチ用
+  car.add(body);
+
+  const paint  = new THREE.MeshStandardMaterial({ color: 0xc8102e, metalness: 0.45, roughness: 0.35 });
+  const white  = new THREE.MeshStandardMaterial({ color: 0xf4f4f0, metalness: 0.2,  roughness: 0.4 });
+  const black  = new THREE.MeshStandardMaterial({ color: 0x151515, metalness: 0.1,  roughness: 0.8 });
+  const glass  = new THREE.MeshStandardMaterial({ color: 0x1b2633, metalness: 0.9,  roughness: 0.08 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 1.0,  roughness: 0.2 });
+  const headM  = new THREE.MeshStandardMaterial({ color: 0xfffbe8, emissive: 0xfff2c0, emissiveIntensity: 0.15, roughness: 0.2 });
+  const tailM  = new THREE.MeshStandardMaterial({ color: 0x7a0010, emissive: 0xff1020, emissiveIntensity: 0.25, roughness: 0.3 });
+  const tireM  = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.95 });
+  const rimM   = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, metalness: 0.9, roughness: 0.3 });
+
+  // 側面プロファイル(u = 前方, v = 上)を押し出して -Z 前方向きに回転
+  function extrudeProfile(points, width, mat, bevel = 0.05) {
+    const s = new THREE.Shape();
+    points.forEach(([u, v], i) => (i ? s.lineTo(u, v) : s.moveTo(u, v)));
+    s.closePath();
+    const g = new THREE.ExtrudeGeometry(s, { depth: width, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 4 });
+    g.translate(0, 0, -width / 2);
+    g.rotateY(Math.PI / 2);           // u → -Z(前方), 押し出し方向 → X
+    const m = new THREE.Mesh(g, mat);
+    return m;
+  }
+
+  // 下半身(ボディ)
+  body.add(extrudeProfile([
+    [-1.88, 0.24], [1.86, 0.24], [1.93, 0.50], [1.84, 0.78], [0.92, 0.94],
+    [-1.80, 0.97], [-1.92, 0.72], [-1.93, 0.40],
+  ], 1.62, paint, 0.06));
+
+  // キャビン(ガラス)
+  body.add(extrudeProfile([
+    [0.88, 0.95], [0.34, 1.34], [-1.52, 1.36], [-1.78, 0.97],
+  ], 1.42, glass, 0.04));
+
+  // 白いルーフ
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.07, 2.02), white);
+  roof.position.set(0, 1.42, 0.60);
+  body.add(roof);
+
+  // ボンネットストライプ
+  const hoodAng = -Math.atan2(0.94 - 0.78, 1.84 - 0.92);
+  [-0.17, 0.17].forEach((x) => {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.012, 0.98), white);
+    st.position.set(x, 0.92, -1.38);
+    st.rotation.x = hoodAng;
+    body.add(st);
+  });
+
+  // 丸目ヘッドライト
+  const headLights = [];
+  [-0.56, 0.56].forEach((x) => {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.025, 8, 20), chrome);
+    ring.position.set(x, 0.70, -1.975);
+    body.add(ring);
+    const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.12, 20), headM);
+    lamp.position.set(x, 0.70, -1.98);
+    lamp.rotation.y = Math.PI;
+    body.add(lamp);
+    headLights.push(lamp);
+  });
+
+  // グリル・バンパー
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.2, 0.06), black);
+  grille.position.set(0, 0.52, -1.96);
+  body.add(grille);
+  const grilleFrame = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.018, 6, 24), chrome);
+  grilleFrame.scale.set(2.1, 0.62, 1);
+  grilleFrame.position.set(0, 0.52, -1.975);
+  body.add(grilleFrame);
+  const fBumper = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.14, 0.14), black);
+  fBumper.position.set(0, 0.30, -1.95); body.add(fBumper);
+  const rBumper = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.14, 0.14), black);
+  rBumper.position.set(0, 0.30, 1.95); body.add(rBumper);
+
+  // テールランプ(縦長)
+  const tailLights = [];
+  [-0.66, 0.66].forEach((x) => {
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, 0.05), tailM);
+    tl.position.set(x, 0.74, 1.94);
+    body.add(tl);
+    tailLights.push(tl);
+  });
+
+  // ドアミラー(白)
+  [-1, 1].forEach((sx) => {
+    const mir = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.1), white);
+    mir.position.set(sx * 0.92, 1.0, -0.72);
+    body.add(mir);
+  });
+
+  // 黒いフェンダーアーチ
+  const archGeo = new THREE.TorusGeometry(0.34, 0.05, 6, 16, Math.PI);
+  const WB = 2.5, TRACK = 0.79, WR = 0.29;
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+    const a = new THREE.Mesh(archGeo, black);
+    a.rotation.y = Math.PI / 2;
+    a.position.set(sx * 0.86, WR, sz * WB / 2);
+    body.add(a);
+  });
+
+  // ホイール(ボディの外 = ロールしない)
+  const wheels = {};
+  const tireGeo = new THREE.CylinderGeometry(WR, WR, 0.22, 22); tireGeo.rotateZ(Math.PI / 2);
+  const rimGeo = new THREE.CylinderGeometry(WR * 0.62, WR * 0.62, 0.232, 14); rimGeo.rotateZ(Math.PI / 2);
+  const spokeGeo = new THREE.BoxGeometry(0.236, 0.04, WR * 1.15);
+  [['fl', -1, -1], ['fr', 1, -1], ['rl', -1, 1], ['rr', 1, 1]].forEach(([k, sx, sz]) => {
+    const pivot = new THREE.Group();  // ステア用
+    pivot.position.set(sx * TRACK, WR, sz * WB / 2);
+    const spin = new THREE.Group();   // 回転用
+    spin.add(new THREE.Mesh(tireGeo, tireM));
+    spin.add(new THREE.Mesh(rimGeo, rimM));
+    for (let i = 0; i < 3; i++) { const sp = new THREE.Mesh(spokeGeo, black); sp.rotation.x = i * Math.PI / 3; spin.add(sp); }
+    pivot.add(spin);
+    car.add(pivot);
+    wheels[k] = { pivot, spin };
+  });
+
+  return { root: car, body, wheels, steerKeys: ['fl', 'fr'], headLights, tailLights, wheelRadius: WR };
+}
+
+/* ---------- 二輪・ライダー共通の部品 ---------- */
+// 2点間をつなぐ円柱
+function rod(THREE, a, b, r, mat) {
+  const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+  const d = B.clone().sub(A);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 10), mat);
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  return m;
+}
+const DELIVERY_ORANGE = 0xff6a00;
+
+// ライダー(配達員)。p は各関節の位置 [x,y,z](右 +X / 上 +Y / 前 -Z)
+function buildRider(THREE, p, withBackpack) {
+  const g = new THREE.Group();
+  const jacket = new THREE.MeshStandardMaterial({ color: 0x23324a, roughness: 0.8 });
+  const pants  = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.9 });
+  const skin   = new THREE.MeshStandardMaterial({ color: 0xe8b996, roughness: 0.7 });
+  const helmet = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, metalness: 0.2, roughness: 0.35 });
+  const bag    = new THREE.MeshStandardMaterial({ color: DELIVERY_ORANGE, roughness: 0.55 });
+  const white  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+
+  g.add(rod(THREE, p.hips, p.shoulders, 0.15, jacket));                 // 胴
+  for (const s of [-1, 1]) {
+    const sh = [p.shoulders[0] + s * 0.17, p.shoulders[1] - 0.03, p.shoulders[2]];
+    const hand = [p.hand[0] * s, p.hand[1], p.hand[2]];
+    const elbow = [(sh[0] + hand[0]) / 2 + s * 0.05, (sh[1] + hand[1]) / 2 - 0.06, (sh[2] + hand[2]) / 2];
+    g.add(rod(THREE, sh, elbow, 0.05, jacket), rod(THREE, elbow, hand, 0.045, jacket));
+    const hip = [s * 0.1, p.hips[1], p.hips[2]];
+    const knee = [p.knee[0] * s, p.knee[1], p.knee[2]];
+    const foot = [p.foot[0] * s, p.foot[1], p.foot[2]];
+    g.add(rod(THREE, hip, knee, 0.07, pants), rod(THREE, knee, foot, 0.06, pants));
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.24), pants);
+    shoe.position.set(foot[0], foot[1], foot[2] - 0.05);
+    g.add(shoe);
+  }
+  const neck = [p.shoulders[0], p.shoulders[1] + 0.1, p.shoulders[2] - 0.03];
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), skin);
+  head.position.set(neck[0], neck[1] + 0.1, neck[2] - 0.03);
+  g.add(head);
+  const hel = new THREE.Mesh(new THREE.SphereGeometry(0.135, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), helmet);
+  hel.position.copy(head.position); hel.position.y += 0.02;
+  g.add(hel);
+
+  if (withBackpack) {   // 配達用の四角いリュック
+    const torsoDir = new THREE.Vector3(...p.shoulders).sub(new THREE.Vector3(...p.hips)).normalize();
+    const pack = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.34), bag);
+    pack.add(box);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.445, 0.07, 0.345), white);
+    pack.add(stripe);
+    pack.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), torsoDir);
+    const mid = new THREE.Vector3(...p.hips).lerp(new THREE.Vector3(...p.shoulders), 0.62);
+    pack.position.copy(mid).add(new THREE.Vector3(0, 0.02, 0.27));
+    g.add(pack);
+  }
+  return g;
+}
+
+function bikeWheel(THREE, R, tube, spokes, tireM, rimM) {
+  const spin = new THREE.Group();
+  const tire = new THREE.Mesh(new THREE.TorusGeometry(R - tube, tube, 10, 32), tireM);
+  tire.rotation.y = Math.PI / 2;
+  spin.add(tire);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 10), rimM);
+  hub.rotation.z = Math.PI / 2;
+  spin.add(hub);
+  for (let i = 0; i < spokes; i++) {
+    const a = (i / spokes) * Math.PI * 2;
+    spin.add(rod(THREE, [0, 0, 0], [0, Math.cos(a) * (R - tube * 1.6), Math.sin(a) * (R - tube * 1.6)], 0.006, rimM));
+  }
+  return spin;
+}
+
+/* ---------- 原付スクーター(後ろに配達ボックス) ---------- */
+function buildScooter(THREE) {
+  const root = new THREE.Group();
+  const body = new THREE.Group();      // バンク(リーン)で全体を傾ける
+  root.add(body);
+  const paint = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, metalness: 0.3, roughness: 0.35 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0x2a6f97, metalness: 0.3, roughness: 0.4 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.8 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xcfd3d8, metalness: 1, roughness: 0.25 });
+  const tireM = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.95 });
+  const headM = new THREE.MeshStandardMaterial({ color: 0xfffbe8, emissive: 0xfff2c0, emissiveIntensity: 0.15 });
+  const tailM = new THREE.MeshStandardMaterial({ color: 0x7a0010, emissive: 0xff1020, emissiveIntensity: 0.25 });
+  const boxM = new THREE.MeshStandardMaterial({ color: DELIVERY_ORANGE, roughness: 0.5 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+  const WR = 0.26, ZF = -0.65, ZR = 0.65;
+
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.62), black);
+  floor.position.set(0, 0.32, -0.02); body.add(floor);
+  const rear = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.36, 0.78), paint);
+  rear.position.set(0, 0.56, 0.42); body.add(rear);
+  const side = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.7), accent);
+  side.position.set(0, 0.44, 0.44); body.add(side);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.1, 0.62), black);
+  seat.position.set(0, 0.79, 0.36); body.add(seat);
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.66, 0.1), paint);
+  shield.position.set(0, 0.62, -0.38); shield.rotation.x = 0.28; body.add(shield);
+  const muffler = rod(THREE, [0.2, 0.3, 0.35], [0.2, 0.34, 0.85], 0.05, chrome); body.add(muffler);
+  const tl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.05), tailM);
+  tl.position.set(0, 0.66, 0.82); body.add(tl);
+
+  // 配達ボックス(荷台)
+  const rack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.36), chrome);
+  rack.position.set(0, 0.86, 0.68); body.add(rack);
+  const dbox = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.42, 0.46), boxM);
+  dbox.position.set(0, 1.09, 0.7); body.add(dbox);
+  const dstripe = new THREE.Mesh(new THREE.BoxGeometry(0.465, 0.07, 0.465), white);
+  dstripe.position.set(0, 1.12, 0.7); body.add(dstripe);
+
+  // 後輪
+  const wheels = {};
+  const tireGeo = new THREE.CylinderGeometry(WR, WR, 0.11, 22); tireGeo.rotateZ(Math.PI / 2);
+  const rimGeo = new THREE.CylinderGeometry(WR * 0.6, WR * 0.6, 0.12, 14); rimGeo.rotateZ(Math.PI / 2);
+  const makeWheel = () => { const s = new THREE.Group(); s.add(new THREE.Mesh(tireGeo, tireM), new THREE.Mesh(rimGeo, chrome)); return s; };
+  const rPivot = new THREE.Group(); rPivot.position.set(0, WR, ZR);
+  const rSpin = makeWheel(); rPivot.add(rSpin); body.add(rPivot);
+  wheels.r = { pivot: rPivot, spin: rSpin };
+
+  // 前:ハンドル・フォーク・前輪(ステア用ピボット)
+  const fPivot = new THREE.Group(); fPivot.position.set(0, 0, ZF + 0.08);
+  const fSpin = makeWheel(); fSpin.position.set(0, WR, -0.08); fPivot.add(fSpin);
+  fPivot.add(rod(THREE, [0, 0.92, 0.04], [0, WR, -0.08], 0.03, chrome));
+  fPivot.add(rod(THREE, [-0.33, 1.0, 0.1], [0.33, 1.0, 0.1], 0.022, black));
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.2), paint);
+  hood.position.set(0, 0.95, 0.03); fPivot.add(hood);
+  const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.07, 18), headM);
+  lamp.position.set(0, 0.95, -0.075); lamp.rotation.y = Math.PI; fPivot.add(lamp);
+  const fender = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.4), paint);
+  fender.position.set(0, WR * 2 + 0.04, -0.08); fPivot.add(fender);
+  body.add(fPivot);
+  wheels.f = { pivot: fPivot, spin: fSpin };
+
+  body.add(buildRider(THREE, {
+    hips: [0, 0.9, 0.3], shoulders: [0, 1.42, 0.12], hand: [0.3, 1.02, -0.5],
+    knee: [0.15, 0.86, -0.18], foot: [0.13, 0.4, -0.22],
+  }, false));
+
+  return { root, body, wheels, steerKeys: ['f'], steerMul: 0.6, headLights: [lamp], tailLights: [tl], wheelRadius: WR };
+}
+
+/* ---------- 自転車(配達リュックのライダー) ---------- */
+function buildBicycle(THREE) {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const frameM = new THREE.MeshStandardMaterial({ color: 0x1f8a70, metalness: 0.5, roughness: 0.35 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.8 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xcfd3d8, metalness: 1, roughness: 0.25 });
+  const tireM = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.95 });
+  const headM = new THREE.MeshStandardMaterial({ color: 0xfffbe8, emissive: 0xfff2c0, emissiveIntensity: 0.15 });
+  const tailM = new THREE.MeshStandardMaterial({ color: 0x7a0010, emissive: 0xff1020, emissiveIntensity: 0.25 });
+  const R = 0.34, ZF = -0.52, ZR = 0.53;
+  const BB = [0, 0.3, 0], S = [0, 0.9, 0.17], HT = [0, 0.92, -0.38], HB = [0, 0.74, -0.42], RA = [0, R, ZR];
+
+  body.add(rod(THREE, HT, S, 0.022, frameM));      // トップチューブ
+  body.add(rod(THREE, HB, BB, 0.026, frameM));     // ダウンチューブ
+  body.add(rod(THREE, BB, S, 0.022, frameM));      // シートチューブ
+  for (const x of [-0.05, 0.05]) {
+    body.add(rod(THREE, [x, BB[1], BB[2]], [x, RA[1], RA[2]], 0.014, frameM));   // チェーンステー
+    body.add(rod(THREE, [x, S[1] - 0.04, S[2]], [x, RA[1], RA[2]], 0.013, frameM)); // シートステー
+  }
+  body.add(rod(THREE, S, [0, 1.0, 0.2], 0.014, chrome));
+  const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.26), black);
+  saddle.position.set(0, 1.02, 0.19); body.add(saddle);
+  const tl = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.03), tailM);
+  tl.position.set(0, 0.86, 0.3); body.add(tl);
+
+  // クランクとペダル(速度に合わせて回る)
+  const crank = new THREE.Group(); crank.position.set(...BB);
+  crank.add(rod(THREE, [-0.08, 0, 0], [0.08, 0, 0], 0.02, chrome));
+  for (const s of [-1, 1]) {
+    crank.add(rod(THREE, [s * 0.08, 0, 0], [s * 0.08, -s * 0.17, 0], 0.013, chrome));
+    const pedal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.08), black);
+    pedal.position.set(s * 0.13, -s * 0.17, 0); crank.add(pedal);
+  }
+  body.add(crank);
+
+  const wheels = {};
+  const rPivot = new THREE.Group(); rPivot.position.set(...RA);
+  const rSpin = bikeWheel(THREE, R, 0.025, 12, tireM, chrome); rPivot.add(rSpin); body.add(rPivot);
+  wheels.r = { pivot: rPivot, spin: rSpin };
+
+  const fPivot = new THREE.Group(); fPivot.position.set(0, 0, -0.45);
+  const fSpin = bikeWheel(THREE, R, 0.025, 12, tireM, chrome); fSpin.position.set(0, R, ZF + 0.45); fPivot.add(fSpin);
+  for (const x of [-0.045, 0.045]) fPivot.add(rod(THREE, [x, 0.76, 0.03], [x, R, ZF + 0.45], 0.013, frameM));
+  fPivot.add(rod(THREE, [0, 0.74, 0.03], [0, 1.04, 0.06], 0.018, chrome));
+  fPivot.add(rod(THREE, [-0.28, 1.05, 0.08], [0.28, 1.05, 0.08], 0.016, black));
+  const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.035, 14), headM);
+  lamp.position.set(0, 0.95, -0.02); lamp.rotation.y = Math.PI; fPivot.add(lamp);
+  body.add(fPivot);
+  wheels.f = { pivot: fPivot, spin: fSpin };
+
+  body.add(buildRider(THREE, {
+    hips: [0, 1.08, 0.2], shoulders: [0, 1.5, -0.1], hand: [0.25, 1.06, -0.37],
+    knee: [0.13, 0.82, -0.12], foot: [0.13, 0.32, -0.02],
+  }, true));
+
+  return { root, body, wheels, steerKeys: ['f'], steerMul: 0.7, crank, headLights: [lamp], tailLights: [tl], wheelRadius: R };
+}
+
+/* ---------- 空飛ぶミニ(ミニ + 下向きジェット 4 基 + 後ろのブースター 2 基) ---------- */
+function buildFlyCar(THREE) {
+  const o = buildMiniCar(THREE);
+  const nozzleM = new THREE.MeshStandardMaterial({ color: 0x2a2f38, metalness: 0.9, roughness: 0.3 });
+  const glowM = new THREE.MeshStandardMaterial({ color: 0x0d2a36, emissive: 0x33ccff, emissiveIntensity: 1.2 });
+  // 外炎は通常合成(明るい地図の上でも青く見える)、芯は加算合成で白く光らせる
+  const flameM = new THREE.MeshBasicMaterial({ color: 0x2fb8ff, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide });
+  const coreM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+
+  // 炎:根元が原点、先端が -Y(下)へ伸びる円錐。scale.y で長さを変える
+  const flameGeo = new THREE.ConeGeometry(0.15, 1, 16, 1, true); flameGeo.rotateX(Math.PI); flameGeo.translate(0, -0.5, 0);
+  const coreGeo = new THREE.ConeGeometry(0.07, 0.6, 12, 1, true); coreGeo.rotateX(Math.PI); coreGeo.translate(0, -0.3, 0);
+  const flames = [];
+  for (const [x, z] of [[-0.42, -0.95], [0.42, -0.95], [-0.42, 0.95], [0.42, 0.95]]) {
+    const nz = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.12, 18), nozzleM);
+    nz.position.set(x, 0.2, z); o.body.add(nz);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 8, 24), glowM);
+    ring.rotation.x = Math.PI / 2; ring.position.set(x, 0.135, z); o.body.add(ring);
+    const f = new THREE.Group();
+    f.add(new THREE.Mesh(flameGeo, flameM), new THREE.Mesh(coreGeo, coreM));
+    f.position.set(x, 0.13, z); f.visible = false;
+    o.body.add(f); flames.push(f);
+  }
+  // 後ろのブースター:炎は +Z(後方)へ伸びる
+  const rFlameGeo = new THREE.ConeGeometry(0.1, 1, 14, 1, true); rFlameGeo.rotateX(Math.PI / 2); rFlameGeo.translate(0, 0, 0.5);
+  const rearFlames = [];
+  for (const x of [-0.42, 0.42]) {
+    const nz = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.16, 16), nozzleM);
+    nz.rotation.x = Math.PI / 2; nz.position.set(x, 0.45, 2.0); o.body.add(nz);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.02, 8, 20), glowM);
+    ring.position.set(x, 0.45, 2.08); o.body.add(ring);
+    const f = new THREE.Mesh(rFlameGeo, flameM);
+    f.position.set(x, 0.45, 2.08); f.visible = false;
+    o.body.add(f); rearFlames.push(f);
+  }
+  // 側面の発光ライン
+  for (const s of [-1, 1]) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 2.6), glowM);
+    line.position.set(s * 0.86, 0.36, 0); o.body.add(line);
+  }
+  // タイヤ収納アニメ用に元の位置を覚えておく
+  for (const k in o.wheels) o.wheels[k].base = o.wheels[k].pivot.position.clone();
+  return { ...o, fly: true, flames, rearFlames, glowM };
+}
+
+// ジェットが地面を照らす光(低空のときだけ)
+function makeGroundGlow(THREE) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(120,220,255,0.9)'); grd.addColorStop(1, 'rgba(120,220,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(4, 5.5),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  m.rotation.x = -Math.PI / 2;
+  return m;
+}
+
+function makeBlobShadow(THREE, w = 2.4, l = 4.8) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(0,0,0,0.55)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.03;
+  return m;
+}
+
+function pointInRing(pt, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function pointInPolygon(pt, rings) {
+  if (!rings.length || !pointInRing(pt, rings[0])) return false;
+  for (let i = 1; i < rings.length; i++) if (pointInRing(pt, rings[i])) return false;
+  return true;
+}
+function pointInGeometry(pt, geom) {
+  if (!geom) return false;
+  if (geom.type === 'Polygon') return pointInPolygon(pt, geom.coordinates);
+  if (geom.type === 'MultiPolygon') return geom.coordinates.some((p) => pointInPolygon(pt, p));
+  return false;
+}
+
+const Engine = {
+  ctx: null, muted: false,
+  init() {
+    if (this.ctx) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o1 = ctx.createOscillator(); o1.type = 'sawtooth';
+      const o2 = ctx.createOscillator(); o2.type = 'square';
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; f.Q.value = 3;
+      const g = ctx.createGain(); g.gain.value = 0;
+      const g2 = ctx.createGain(); g2.gain.value = 0.35;
+      o1.connect(f); o2.connect(g2); g2.connect(f); f.connect(g); g.connect(ctx.destination);
+      o1.start(); o2.start();
+      // ジェット噴射音(ホワイトノイズ → バンドパス)
+      const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const ns = ctx.createBufferSource(); ns.buffer = nb; ns.loop = true;
+      const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 700; nf.Q.value = 0.6;
+      const ng = ctx.createGain(); ng.gain.value = 0;
+      ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination); ns.start();
+      Object.assign(this, { ctx, o1, o2, f, g, nf, ng, nbuf: nb });
+    } catch (e) { /* 音なしで続行 */ }
+  },
+  update(rpm, throttle) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, e = V.engine;
+    const jet = e && e.jet ? flight.thrust : 0;
+    this.ng.gain.setTargetAtTime(this.muted || !jet ? 0 : 0.02 + jet * 0.09, t, 0.1);
+    this.nf.frequency.setTargetAtTime(450 + jet * 1600, t, 0.1);
+    if (!e) { this.g.gain.setTargetAtTime(0, t, 0.08); return; }   // 自転車は無音
+    if (this.o1.type !== e.type) this.o1.type = e.type;
+    const hz = rpm / e.div;              // 爆発周波数(4気筒 rpm/30, 単気筒は高めに)
+    this.o1.frequency.setTargetAtTime(hz, t, 0.05);
+    this.o2.frequency.setTargetAtTime(hz * e.sub, t, 0.05);
+    this.f.frequency.setTargetAtTime(e.filter + rpm * e.filterMul + throttle * 600, t, 0.08);
+    this.g.gain.setTargetAtTime(this.muted ? 0 : e.gain + throttle * e.gain * 0.85, t, 0.08);
+  },
+  // 短い音を鳴らす: [[周波数, 開始秒, 長さ, 波形, 音量], ...]
+  tones(list) {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    for (const [hz, at, dur, type = 'sine', vol = 0.2] of list) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.value = hz;
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      o.connect(g); g.connect(ctx.destination); o.start(t0 + at); o.stop(t0 + at + dur + 0.02);
+    }
+  },
+  horn() {
+    switch (V.horn) {
+      case 'bell': this.tones([[2350, 0, 0.5, 'sine', 0.18], [3120, 0, 0.35, 'sine', 0.08], [2350, 0.16, 0.6, 'sine', 0.18], [3120, 0.16, 0.4, 'sine', 0.08]]); break;
+      case 'beep-high': this.tones([[620, 0, 0.32, 'square', 0.07], [780, 0, 0.32, 'square', 0.05]]); break;
+      default: this.tones([[400, 0, 0.45, 'square', 0.08], [500, 0, 0.45, 'square', 0.06]]);
+    }
+  },
+  // 周波数が滑る音
+  sweep(f0, f1, dur, type = 'sawtooth', vol = 0.15, at = 0) {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx, t0 = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(ctx.destination); o.start(t0); o.stop(t0 + dur + 0.05);
+  },
+  // ノイズの破裂音(爆発・噴射・べちゃ)
+  burst(dur, freq, vol = 0.3, q = 0.8) {
+    if (!this.ctx || this.muted || !this.nbuf) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = this.nbuf; s.loop = true; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    s.connect(f); f.connect(g); g.connect(ctx.destination); s.start(t0, Math.random()); s.stop(t0 + dur + 0.05);
+  },
+  roar()    { this.sweep(170, 55, 2.4, 'sawtooth', 0.22); this.sweep(260, 90, 2.2, 'square', 0.07); this.burst(2.2, 320, 0.3, 0.5); },
+  rocket()  { this.burst(0.5, 1400, 0.16); this.sweep(900, 260, 0.45, 'sawtooth', 0.035); },
+  explode(v = 1) { this.burst(1.3, 180, 0.5 * v, 0.6); this.sweep(110, 35, 0.9, 'sine', 0.35 * v); },
+  caw()     { this.sweep(820, 540, 0.2, 'square', 0.045); this.sweep(820, 540, 0.22, 'square', 0.045, 0.28); },
+  splatSnd() { this.burst(0.3, 420, 0.35, 1.2); this.sweep(320, 70, 0.25, 'sine', 0.25); },
+  // タイトルに戻ったときなど:エンジン音・ジェット音を止める
+  silence() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.g.gain.setTargetAtTime(0, t, 0.05);
+    this.ng.gain.setTargetAtTime(0, t, 0.05);
+  },
+  ping()  { this.tones([[880, 0, 0.18, 'sine', 0.22], [1320, 0.14, 0.3, 'sine', 0.22]]); },        // 注文の通知
+  chime() { this.tones([[784, 0, 0.25], [988, 0.12, 0.25], [1175, 0.24, 0.25], [1568, 0.36, 0.5]]); }, // 配達完了
+  thud(vol = 0.4) {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(110, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.25);
+    g.gain.setValueAtTime(vol, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.3);
+  },
+};
+
+/* =====================================================================
+ * ミュージックプレイヤー(MP3 / MP4 / M4A)
+ *  - 📁 ボタン: showDirectoryPicker(Chrome/Edge)→ 非対応なら <input webkitdirectory>
+ *  - 選んだフォルダは IndexedDB に記憶(次回は名前をクリックで再接続)
+ *  - CONFIG.musicFolderUrl: HTTP 配信時のディレクトリ一覧から読み込み
+ * ===================================================================== */
+const Music = (() => {
+  const AUDIO_RE = /\.(mp3|mp4|m4a)$/i;
+  const audio = new Audio();
+  audio.preload = 'metadata';
+  let tracks = [];          // { name, path, url? , getFile? }
+  let cur = -1, shuffle = false, repeat = 0;   // repeat: 0=全曲 1=1曲 2=なし
+  let objUrl = null, seeking = false, errorRun = 0, savedHandle = null;
+  const REPEAT_ICON = ['🔁', '🔂', '➡️'], REPEAT_NAME = ['全曲リピート', '1曲リピート', 'リピートなし'];
+
+  const fmt = (s) => (isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00');
+  const baseName = (n) => n.replace(/\.[^.]+$/, '');
+  const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+
+  // ---- IndexedDB(フォルダハンドルの保存) ----
+  function idb(mode, fn) {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('mini-tokyo-drive-music', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onerror = () => rej(r.error);
+      r.onsuccess = () => {
+        const tx = r.result.transaction('kv', mode);
+        const req = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => res(req && req.result);
+        tx.onerror = () => rej(tx.error);
+      };
+    });
+  }
+
+  // ---- 再生制御 ----
+  async function play(i) {
+    if (!tracks.length) return;
+    cur = ((i % tracks.length) + tracks.length) % tracks.length;
+    const t = tracks[cur];
+    try {
+      const src = t.url || URL.createObjectURL(await t.getFile());
+      if (objUrl) URL.revokeObjectURL(objUrl);
+      objUrl = t.url ? null : src;
+      audio.src = src;
+      await audio.play();
+    } catch (e) {
+      if (e.name !== 'AbortError') console.warn('再生失敗', t.path, e);
+    }
+    render();
+  }
+  function next(auto = false) {
+    if (!tracks.length) return;
+    if (auto && repeat === 1) { audio.currentTime = 0; audio.play(); return; }
+    if (shuffle && tracks.length > 1) {
+      let j; do { j = Math.floor(Math.random() * tracks.length); } while (j === cur);
+      return play(j);
+    }
+    if (auto && repeat === 2 && cur === tracks.length - 1) { render(); return; }
+    play(cur + 1);
+  }
+  function prev() {
+    if (!tracks.length) return;
+    if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+    play(cur - 1);
+  }
+  function toggle() {
+    if (!tracks.length) { pick(); return; }
+    if (cur < 0) return play(0);
+    if (audio.paused) audio.play().catch(() => {}); else audio.pause();
+  }
+
+  // ---- フォルダ読み込み ----
+  function setTracks(list, label, autoplay) {
+    list.sort((a, b) => a.path.localeCompare(b.path, 'ja', { numeric: true }));
+    audio.pause();
+    tracks = list; cur = -1; errorRun = 0;
+    $('plFolder').textContent = `${label}(${list.length}曲)`;
+    $('plFolder').classList.remove('link');
+    $('plFolder').title = label;
+    renderList();
+    if (!list.length) { toast('MP3 / MP4 が見つかりません', 1600); render(); return; }
+    if (autoplay) play(0); else render();
+  }
+  async function scanDir(dir, prefix = '', out = []) {
+    for await (const [name, entry] of dir.entries()) {
+      if (entry.kind === 'file' && AUDIO_RE.test(name)) out.push({ name: baseName(name), path: prefix + name, getFile: () => entry.getFile() });
+      else if (entry.kind === 'directory') await scanDir(entry, prefix + name + '/', out);
+    }
+    return out;
+  }
+  async function loadHandle(h, autoplay) {
+    $('plFolder').textContent = '読み込み中…';
+    setTracks(await scanDir(h), h.name, autoplay);
+  }
+  async function pick() {
+    if (window.showDirectoryPicker) {
+      try {
+        const h = await window.showDirectoryPicker({ id: 'mtd-music', mode: 'read' });
+        savedHandle = h;
+        idb('readwrite', (s) => s.put(h, 'dir')).catch(() => {});
+        await loadHandle(h, true);
+      } catch (e) { if (e.name !== 'AbortError') { console.warn(e); $('plFiles').click(); } }
+    } else {
+      $('plFiles').click();
+    }
+  }
+  async function reconnect() {
+    if (!savedHandle) return;
+    try {
+      if ((await savedHandle.requestPermission({ mode: 'read' })) === 'granted') await loadHandle(savedHandle, true);
+    } catch (e) { console.warn(e); }
+  }
+  $('plFiles').addEventListener('change', (e) => {
+    const files = [...e.target.files].filter((f) => AUDIO_RE.test(f.name));
+    const root = (e.target.files[0] && e.target.files[0].webkitRelativePath.split('/')[0]) || 'フォルダ';
+    setTracks(files.map((f) => ({ name: baseName(f.name), path: f.webkitRelativePath || f.name, getFile: async () => f })), root, true);
+    e.target.value = '';
+  });
+
+  async function loadFromUrl(url) {
+    if (!url || !location.protocol.startsWith('http')) return false;
+    try {
+      const base = new URL(url.endsWith('/') ? url : url + '/', location.href);
+      const html = await (await fetch(base)).text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const seen = new Set(), list = [];
+      for (const a of doc.querySelectorAll('a[href]')) {
+        const u = new URL(a.getAttribute('href'), base);
+        const file = decodeURIComponent(u.pathname.split('/').pop());
+        if (!AUDIO_RE.test(file) || seen.has(u.href)) continue;
+        seen.add(u.href);
+        list.push({ name: baseName(file), path: file, url: u.href });
+      }
+      if (!list.length) return false;
+      setTracks(list, url, false);
+      return true;
+    } catch (e) { console.warn('musicFolderUrl 読み込み失敗', e); return false; }
+  }
+  async function restore() {
+    if (await loadFromUrl(CONFIG.musicFolderUrl)) return;
+    try {
+      const h = await idb('readonly', (s) => s.get('dir'));
+      if (!h || !h.queryPermission) return;
+      savedHandle = h;
+      if ((await h.queryPermission({ mode: 'read' })) === 'granted') { await loadHandle(h, false); return; }
+      $('plFolder').textContent = `${h.name}(クリックで再接続)`;
+      $('plFolder').classList.add('link');
+    } catch (e) { /* 保存なし */ }
+  }
+
+  // ---- 表示 ----
+  function renderList() {
+    const ol = $('plList'); ol.innerHTML = '';
+    tracks.forEach((t, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="n">${i + 1}</span>`;
+      li.appendChild(document.createTextNode(t.name));
+      li.title = t.path;
+      li.onclick = () => play(i);
+      ol.appendChild(li);
+    });
+  }
+  function render() {
+    const t = tracks[cur];
+    $('plTitle').textContent = t ? t.name : (tracks.length ? '▶ で再生' : '—');
+    $('plTitle').title = t ? t.path : '';
+    $('plPlay').textContent = audio.paused ? '▶' : '⏸';
+    [...$('plList').children].forEach((li, i) => li.classList.toggle('cur', i === cur));
+    const li = $('plList').children[cur];
+    if (li) li.scrollIntoView({ block: 'nearest' });
+    if ('mediaSession' in navigator && t) navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, album: 'Mini Tokyo Drive' });
+  }
+
+  // ---- イベント ----
+  audio.addEventListener('play', render);
+  audio.addEventListener('pause', render);
+  audio.addEventListener('playing', () => { errorRun = 0; });
+  audio.addEventListener('ended', () => next(true));
+  audio.addEventListener('error', () => {
+    if (!tracks[cur]) return;
+    toast('再生できません: ' + tracks[cur].name, 1400);
+    if (++errorRun < tracks.length) setTimeout(() => next(), 300); else errorRun = 0;
+  });
+  audio.addEventListener('loadedmetadata', () => { $('plDur').textContent = fmt(audio.duration); });
+  audio.addEventListener('timeupdate', () => {
+    $('plCur').textContent = fmt(audio.currentTime);
+    if (!seeking && audio.duration) $('plSeek').value = Math.round(audio.currentTime / audio.duration * 1000);
+  });
+
+  const seek = $('plSeek');
+  seek.addEventListener('input', () => { seeking = true; if (audio.duration) $('plCur').textContent = fmt(seek.value / 1000 * audio.duration); });
+  seek.addEventListener('change', () => {
+    if (audio.duration) audio.currentTime = seek.value / 1000 * audio.duration;
+    seeking = false; seek.blur();
+  });
+  const vol = $('plVol');
+  const savedVol = parseFloat(ls('mtd-music-vol'));
+  let baseVol = isFinite(savedVol) ? savedVol : CONFIG.musicVolume, duckMul = 1;
+  const applyVol = () => { audio.volume = clamp(baseVol * duckMul, 0, 1); };
+  applyVol();
+  vol.value = Math.round(baseVol * 100);
+  vol.addEventListener('input', () => { baseVol = vol.value / 100; applyVol(); ls('mtd-music-vol', String(baseVol)); });
+  vol.addEventListener('change', () => vol.blur());
+
+  $('plPick').onclick = pick;
+  $('plFolder').onclick = () => { if ($('plFolder').classList.contains('link')) reconnect(); };
+  $('plPlay').onclick = toggle;
+  $('plNext').onclick = () => next();
+  $('plPrev').onclick = prev;
+  $('plShuf').onclick = () => { shuffle = !shuffle; $('plShuf').classList.toggle('on', shuffle); toast(shuffle ? 'シャッフル ON' : 'シャッフル OFF'); };
+  $('plRep').onclick = () => { repeat = (repeat + 1) % 3; $('plRep').textContent = REPEAT_ICON[repeat]; toast(REPEAT_NAME[repeat]); };
+  $('plFold').onclick = () => { const f = $('player').classList.toggle('folded'); $('plFold').textContent = f ? '+' : '–'; };
+  // ボタンにフォーカスが残ると Space(サイドブレーキ)で押されてしまうので外す
+  $('player').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) b.blur(); });
+
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler('play', toggle);
+      navigator.mediaSession.setActionHandler('pause', toggle);
+      navigator.mediaSession.setActionHandler('nexttrack', () => next());
+      navigator.mediaSession.setActionHandler('previoustrack', prev);
+    } catch (e) {}
+  }
+
+  restore();
+  // ナビ音声の間は音楽を小さくする
+  const duck = (on) => { duckMul = on ? 0.3 : 1; applyVol(); };
+  return { toggle, next, prev, pick, duck, audio };
+})();
+window.music = Music;  // デバッグ用
+
+
+/* =====================================================================
+ * 地図
+ * ===================================================================== */
+const map = new maplibregl.Map({
+  container: 'map',
+  style: CONFIG.styleUrl,
+  center: [CONFIG.start.lng, CONFIG.start.lat],
+  zoom: 18, pitch: 60, bearing: CONFIG.start.heading,
+  maxZoom: 22, maxPitch: 85,
+  interactive: false,          // 地図のドラッグ・キー操作は車の操作と競合するので無効
+  attributionControl: { compact: true },
+  fadeDuration: 0,
+});
+window.map = map;  // デバッグ用
+
+/* ---------- 車の状態(実寸メートル) ---------- */
+const car = {
+  lng: CONFIG.start.lng, lat: CONFIG.start.lat, heading: CONFIG.start.heading * DEG,
+  vx: 0, vy: 0, vf: 0, steer: 0, roll: 0, pitch: 0, odo: 0,
+  alt: 0, vz: 0,   // 高度(m)と上下の速度(空飛ぶ車のみ)
+};
+// 空飛ぶ車の状態。phase: 'off' | 'takeoff'(自動離陸中・操作不可)| 'fly' / thrust: 噴射の強さ 0〜1 / gear: 0 = タイヤ出 〜 1 = 収納
+const flight = { phase: 'off', t: 0, thrust: 0, gear: 0 };
+let shadowMesh = null, glowMesh = null;
+const keys = {};
+window.car = car;  // デバッグ用
+let camMode = 0, zoomOffset = 0, camBearing = CONFIG.start.heading;
+let collisions = true, lightsOn = false, shake = 0, started = false, mapReady = false;
+let showMainRoute = (() => { try { const v = localStorage.getItem('mtd-main-route'); if (v !== null) return v === '1'; } catch (e) {} return CONFIG.showRouteOnMain; })();
+let carObj = null, carHolder = null, gltfWheels = null;
+let buildingLayers = [];
+
+/* ---------- three.js カスタムレイヤー ---------- */
+const carLayer = {
+  id: 'player-car',
+  type: 'custom',
+  renderingMode: '3d',
+  onAdd(m, gl) {
+    this.camera = new THREE.Camera();
+    this.scene = new THREE.Scene();
+    this.scene.add(new THREE.HemisphereLight(0xeef4ff, 0x445566, 1.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    sun.position.set(-3, 8, 4);
+    this.scene.add(sun);
+
+    carHolder = new THREE.Group();
+    this.scene.add(carHolder);
+    buildVehicle();
+
+    this.renderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
+    this.renderer.autoClear = false;
+  },
+  render(gl, args) {
+    // MapLibre v4: args は行列 / v5: args.defaultProjectionData.mainMatrix
+    const mat = (args && args.defaultProjectionData) ? args.defaultProjectionData.mainMatrix : args;
+    const merc = maplibregl.MercatorCoordinate.fromLngLat([car.lng, car.lat], car.alt);
+    const s = merc.meterInMercatorCoordinateUnits() * V.scale;
+    const model = new THREE.Matrix4()
+      .makeTranslation(merc.x, merc.y, merc.z)
+      .scale(new THREE.Vector3(s, -s, s))
+      .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mat).multiply(model);
+    this.lastProj = this.camera.projectionMatrix;   // ロックオン表示で 3D → 画面座標の変換に使う    carHolder.visible = started || !V.fly;   // 空飛ぶ車はスタートまで見せない(タイトルではシルエットのみ)    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+  },
+};
+
+// 今の乗り物のモデルを作り直す(影 + 本体)
+function buildVehicle() {
+  if (!carHolder) return;
+  while (carHolder.children.length) carHolder.remove(carHolder.children[0]);
+  shadowMesh = makeBlobShadow(THREE, V.shadow[0], V.shadow[1]);
+  carHolder.add(shadowMesh);
+  glowMesh = null;
+  if (V.fly) { glowMesh = makeGroundGlow(THREE); carHolder.add(glowMesh); }
+  carObj = V.build(THREE);
+  gltfWheels = null;
+  carHolder.add(carObj.root);
+  if (vehicleId === 'car' && CONFIG.carModelUrl) loadCustomModel();
+  updateCarObject(0);
+}
+
+function setVehicle(id, quiet) {
+  if (!VEHICLES[id]) return;
+  vehicleId = id; V = VEHICLES[id];
+  try { localStorage.setItem('mtd-vehicle', id); } catch (e) {}
+  car.vx = car.vy = car.vf = car.steer = car.roll = car.pitch = 0;
+  car.alt = car.vz = 0;   // 乗り換えたら地上から
+  Object.assign(flight, { phase: V.fly ? 'takeoff' : 'off', t: 0, thrust: 0, gear: 0 });
+  buildVehicle();
+  $('vehSel').value = id;
+  document.querySelectorAll('#vsel button').forEach((b) => b.classList.toggle('sel', b.dataset.v === id));
+  if (!quiet) toast(V.fly ? '🛸 空飛ぶミニ — ジェット点火!' : `${V.icon} ${V.name}`);
+}
+
+function loadCustomModel() {
+  const forVehicle = vehicleId;
+  new GLTFLoader().load(CONFIG.carModelUrl, (gltf) => {
+    if (vehicleId !== forVehicle) return;   // 読み込み中に乗り換えた
+    const model = gltf.scene;
+    model.rotation.y = CONFIG.carModelRotationY;
+    model.scale.setScalar(CONFIG.carModelScale);
+    model.position.y = CONFIG.carModelOffsetY;
+    carHolder.remove(carObj.root);
+    const body = new THREE.Group(); body.add(model); carHolder.add(body);
+    gltfWheels = {};
+    for (const [k, name] of Object.entries(CONFIG.carModelWheelNames)) {
+      const n = name && model.getObjectByName(name); if (n) gltfWheels[k] = n;
+    }
+    carObj = { root: body, body, wheels: null, steerKeys: [], headLights: [], tailLights: [], wheelRadius: 0.3 };
+    toast('車モデルを読み込みました');
+  }, undefined, (err) => console.error('車モデル読み込み失敗', err));
+}
+
+/* ---------- 読み込み ---------- */
+const loadTimer = setTimeout(() => {
+  $('loadMsg').textContent = '時間がかかっています。ネット接続や広告ブロッカー(tiles.openfreemap.org)を確認してください。';
+}, 15000);
+
+map.on('load', () => {
+  clearTimeout(loadTimer);
+  mapReady = true;
+  const layers = map.getStyle().layers;
+  localizeLabels(map);
+  buildingLayers = layers.filter((l) => l.type === 'fill-extrusion').map((l) => l.id);
+  // 3D建物を少し見やすく(高さ0の建物にも最低限の高さ)
+  for (const id of buildingLayers) {
+    try { map.setPaintProperty(id, 'fill-extrusion-opacity', 0.92); } catch (e) {}
+  }
+  // ナビのルート線(道路の上・建物の下)。高ズームでも道幅くらいに見えるよう指数で太くする
+  addRouteLayers(map, buildingLayers[0],
+    ['interpolate', ['exponential', 2], ['zoom'], 12, 6, 16, 11, 20, 52, 22, 200],
+    ['interpolate', ['exponential', 2], ['zoom'], 12, 4, 16, 8, 20, 40, 22, 160], showMainRoute);
+  map.addLayer(carLayer);
+  updateCarObject(0);
+  updateCamera(1);
+  $('goBtn').textContent = 'クリック / 何かキーを押してスタート';
+  $('goBtn').classList.remove('wait');
+  $('loadMsg').textContent = '';
+});
+map.on('error', (e) => { console.warn(e && e.error); });
+
+function begin() {
+  // map.loaded() はタイル読み込み中に false になるので、load 済みフラグで判定する
+  if (started || !mapReady) return;
+  started = true;
+  Engine.init();
+  $('title').classList.add('hidden');
+  // ヘルプは少ししたら自動で隠す(H でいつでも表示)
+  clearTimeout(helpTimer);
+  helpTimer = setTimeout(() => { if (started && !$('help').classList.contains('hidden')) { $('help').classList.add('hidden'); toast('H でヘルプを表示', 1500); } }, 15000);
+  last = performance.now();
+  rafId = requestAnimationFrame(loop);
+}
+let rafId = 0, helpTimer = 0;
+
+// ゲーム → タイトル画面へ(場所はそのまま。乗り物を選び直して再スタートできる)
+function backToTitle() {
+  if (!started) return;
+  if (Delivery.isBusy() && !confirm('配達中です。配達をキャンセルしてタイトルに戻りますか?')) return;
+  started = false;
+  cancelAnimationFrame(rafId);
+  Object.keys(keys).forEach((k) => (keys[k] = false));
+  Delivery.reset();          // 配達はオフラインに
+  Nav.clear();               // ナビ・音声案内を終了
+  Hazards.clear();           // カラス・怪獣を片付け
+  Engine.silence();
+  setVehicle(vehicleId, true);   // 地上に戻す(空飛ぶミニは次のスタートでまた離陸から)
+  updateCamera(1);
+  $('title').classList.remove('hidden');
+}
+$('homeBtn').onclick = (e) => { e.currentTarget.blur(); backToTitle(); };
+$('title').addEventListener('click', (e) => {
+  const vb = e.target.closest('#vsel button');
+  if (vb) { setVehicle(vb.dataset.v, true); return; }   // 乗り物を選ぶだけ(スタートはしない)
+  begin();
+});
+// 乗り物の選択肢
+const vehSel = $('vehSel');
+for (const [id, v] of Object.entries(VEHICLES)) {
+  const o = document.createElement('option'); o.value = id; o.textContent = `${v.icon} ${v.name}`; vehSel.appendChild(o);
+}
+vehSel.onchange = () => { setVehicle(vehSel.value); vehSel.blur(); };
+function cycleVehicle() {
+  const ids = Object.keys(VEHICLES);
+  setVehicle(ids[(ids.indexOf(vehicleId) + 1) % ids.length]);
+}
+setVehicle(vehicleId, true);
+
+function toggleMainRoute() {
+  showMainRoute = !showMainRoute;
+  try { localStorage.setItem('mtd-main-route', showMainRoute ? '1' : '0'); } catch (e) {}
+  for (const id of ['route-casing', 'route-line']) {
+    try { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showMainRoute ? 'visible' : 'none'); } catch (e) {}
+  }
+  $('routeBtn').textContent = '🛣 ルート ' + (showMainRoute ? 'ON' : 'OFF');
+  toast(showMainRoute ? 'メイン画面のルート表示 ON' : 'メイン画面のルート表示 OFF');
+}
+$('routeBtn').textContent = '🛣 ルート ' + (showMainRoute ? 'ON' : 'OFF');
+$('routeBtn').onclick = (e) => { toggleMainRoute(); e.currentTarget.blur(); };
+
+/* ---------- 入力 ---------- */
+const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hb', KeyF: 'fup', KeyV: 'fdown', KeyE: 'fire' };
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  if (e.code === 'Escape') { backToTitle(); return; }   // タイトル画面では何もしない(スタートもしない)
+  if (!started) { begin(); }
+  if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
+  if (e.repeat) return;
+  switch (e.code) {
+    case 'KeyC': cycleCamera(); break;
+    case 'KeyR': warp({ lng: car.lng, lat: car.lat, heading: car.heading / DEG }); toast('リセット'); break;
+    case 'KeyB': toggleCollision(); break;
+    case 'KeyL': lightsOn = !lightsOn; toast(lightsOn ? 'ライト ON' : 'ライト OFF'); break;
+    case 'KeyM': Engine.muted = !Engine.muted; toast(Engine.muted ? '🔇 ミュート' : '🔊 サウンド'); break;
+    case 'KeyH': $('help').classList.toggle('hidden'); break;
+    case 'KeyP': Music.toggle(); break;
+    case 'KeyN': Music.next(); break;
+    case 'KeyK': Engine.horn(); break;
+    case 'KeyX': cycleVehicle(); break;
+    case 'KeyG': toggleMainRoute(); break;
+    case 'KeyO': Delivery.toggleOnline(); break;
+    case 'Enter': case 'NumpadEnter': Delivery.accept(); break;
+  }
+});
+window.addEventListener('keyup', (e) => { if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = false; e.preventDefault(); } });
+window.addEventListener('blur', () => Object.keys(keys).forEach((k) => (keys[k] = false)));
+window.addEventListener('wheel', (e) => { if (e.target.closest && e.target.closest('#player, #phone')) return; zoomOffset = clamp(zoomOffset - Math.sign(e.deltaY) * 0.25, -3, 1.2); }, { passive: true });
+
+function cycleCamera() {
+  camMode = (camMode + 1) % CONFIG.cameraModes.length;
+  zoomOffset = 0;
+  $('camBtn').textContent = '🎥 ' + CONFIG.cameraModes[camMode].name;
+}
+function toggleCollision() {
+  collisions = !collisions;
+  $('colBtn').textContent = '🏢 衝突 ' + (collisions ? 'ON' : 'OFF');
+  toast(collisions ? '建物衝突 ON' : '建物衝突 OFF(すり抜け)');
+}
+$('camBtn').onclick = (e) => { cycleCamera(); e.currentTarget.blur(); };
+$('colBtn').onclick = (e) => { toggleCollision(); e.currentTarget.blur(); };
+const sel = $('spotSel');
+SPOTS.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.name; sel.appendChild(o); });
+sel.onchange = () => { if (sel.value !== '') { const s = SPOTS[+sel.value]; warp(s); toast(s.name, 1400); } sel.value = ''; sel.blur(); };
+
+function warp(s) {
+  car.lng = s.lng; car.lat = s.lat; car.heading = s.heading * DEG;
+  car.vx = car.vy = car.vf = car.steer = 0;
+  camBearing = s.heading;
+}
+
+/* =====================================================================
+ * ミニマップ(左上)とナビ
+ *  - 地図: OpenFreeMap(メインとは別の MapLibre を 1 枚)
+ *  - 経路: OSRM(OpenStreetMap ベース・キー不要)
+ * ===================================================================== */
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+function localizeLabels(m) {
+  for (const l of m.getStyle().layers) {
+    if (l.type === 'symbol' && l.layout && l.layout['text-field']) {
+      try { m.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:ja'], ['get', 'name'], ['get', 'name:latin']]); } catch (e) {}
+    }
+  }
+}
+function addRouteLayers(m, beforeId, casingWidth, lineWidth, visible = true) {
+  m.addSource('route', { type: 'geojson', data: EMPTY_FC });
+  const layout = { 'line-join': 'round', 'line-cap': 'round', visibility: visible ? 'visible' : 'none' };
+  m.addLayer({ id: 'route-casing', type: 'line', source: 'route', layout, paint: { 'line-color': '#ffffff', 'line-width': casingWidth, 'line-opacity': 0.9 } }, beforeId);
+  m.addLayer({ id: 'route-line', type: 'line', source: 'route', layout, paint: { 'line-color': '#2f80ff', 'line-width': lineWidth, 'line-opacity': 0.9 } }, beforeId);
+}
+
+const Mini = (() => {
+  const m = new maplibregl.Map({
+    container: 'miniMap', style: CONFIG.miniStyleUrl,
+    center: [car.lng, car.lat], zoom: CONFIG.miniZoom,
+    interactive: false, attributionControl: { compact: true }, fadeDuration: 0,
+  });
+  let ready = false, zoom = CONFIG.miniZoom, northUp = false, last = -1e9;
+
+  m.on('load', () => {
+    localizeLabels(m);
+    const firstSymbol = m.getStyle().layers.find((l) => l.type === 'symbol');
+    addRouteLayers(m, firstSymbol && firstSymbol.id, 9, 6);
+    // 空のじゃま者:非常線(赤い円)・怪獣・カラス
+    m.addSource('hazard', { type: 'geojson', data: EMPTY_FC });
+    m.addLayer({ id: 'hz-fill', type: 'fill', source: 'hazard', filter: ['==', ['get', 'k'], 'cordon'],
+      paint: { 'fill-color': '#ff3b3b', 'fill-opacity': 0.25 } });
+    m.addLayer({ id: 'hz-line', type: 'line', source: 'hazard', filter: ['==', ['get', 'k'], 'cordon'],
+      paint: { 'line-color': '#ff3b3b', 'line-width': 2, 'line-dasharray': [2, 1] } });
+    m.addLayer({ id: 'hz-pt', type: 'circle', source: 'hazard', filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': ['match', ['get', 'k'], 'kaiju', 7, 3.5], 'circle-color': ['match', ['get', 'k'], 'kaiju', '#b00020', '#111111'],
+        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    ready = true;
+    update(0, true);
+  });
+
+  function update(now, force) {
+    if (!ready || (!force && now - last < 33)) return;   // 約30fps で十分
+    last = now;
+    const b = northUp ? 0 : car.heading / DEG;
+    const pad = northUp ? 0 : m.getCanvas().clientHeight * 0.3;   // 進行方向が上のときは前方を広く
+    m.jumpTo({ center: [car.lng, car.lat], zoom, bearing: b, padding: { top: pad, bottom: 0, left: 0, right: 0 } });
+    const el = $('miniCar');
+    el.style.top = `calc(50% + ${pad / 2}px)`;
+    el.style.transform = `translate(-50%,-50%) rotate(${car.heading / DEG - b}deg)`;
+  }
+
+  // クリックで目的地
+  $('miniMap').addEventListener('click', (e) => {
+    if (!ready || e.target.closest('.maplibregl-ctrl')) return;
+    const r = $('miniMap').getBoundingClientRect();
+    const ll = m.unproject([e.clientX - r.left, e.clientY - r.top]);
+    Nav.setDestination([ll.lng, ll.lat], '地図で指定した地点');
+  });
+  $('minimap').addEventListener('wheel', (e) => {
+    zoom = clamp(zoom - Math.sign(e.deltaY) * 0.5, 12, 18.5);
+    update(performance.now(), true);
+  }, { passive: true });
+  $('miniNorth').onclick = (e) => {
+    northUp = !northUp;
+    e.currentTarget.textContent = northUp ? '🧭 北が上' : '🧭 進行方向が上';
+    e.currentTarget.blur();
+    update(performance.now(), true);
+  };
+
+  const setHazards = (fc) => { if (ready) m.getSource('hazard').setData(fc); };
+  return { map: m, update, setHazards, isReady: () => ready };
+})();
+
+const Nav = (() => {
+  let route = null, dest = null, busy = false, lastReq = -1e9, offSince = 0, lastUpd = -1e9, markers = [], speaking = null;
+  let managed = false;   // true: 配達中。到着の判定は Delivery 側で行い、ここでは案内を終了しない
+  let intro = '';        // 案内開始時の読み上げ
+  let lastAlong = 0;     // 車がルート上の何 m 地点にいるか
+
+  // ルート上で今の位置から d m 先の点と、そこでの道の向き(ラジアン, 北=0 時計回り)。ルートが無ければ null
+  function pointAhead(d) {
+    if (!route) return null;
+    const c = route.coords, cum = route.cum, target = Math.min(lastAlong + d, route.total - 1);
+    let i = 0;
+    while (i < c.length - 2 && cum[i + 1] < target) i++;
+    const t = clamp((target - cum[i]) / Math.max(0.01, cum[i + 1] - cum[i]), 0, 1);
+    const ll = [lerp(c[i][0], c[i + 1][0], t), lerp(c[i][1], c[i + 1][1], t)];
+    const [de, dn] = xy(c[i + 1], c[i]);
+    return { ll, bearing: Math.atan2(de, dn) };
+  }
+  let voice = true;
+  try { voice = localStorage.getItem('mtd-nav-voice') !== '0'; } catch (e) {}
+  $('navVoice').textContent = voice ? '🔊' : '🔇';
+
+  // 経緯度 → 基準点からのメートル(東, 北)
+  const xy = (p, o) => [(p[0] - o[0]) * mPerDegLng(o[1]), (p[1] - o[1]) * M_PER_DEG_LAT];
+  const dist = (a, b) => Math.hypot(...xy(b, a));
+  const fmtDist = (d) => d >= 1000 ? (d / 1000).toFixed(1) + ' km' : (d >= 100 ? Math.round(d / 10) * 10 : Math.max(0, Math.round(d))) + ' m';
+  const sayDist = (d) => d >= 1000 ? `${(d / 1000).toFixed(1)}キロ` : `${Math.max(50, Math.round(d / 50) * 50)}メートル`;
+
+  // ---- 案内文(OSRM の maneuver → 日本語) ----
+  const DIR = { uturn: 'Uターン', 'sharp right': '大きく右折', right: '右折', 'slight right': '右方向', straight: '直進',
+    'slight left': '左方向', left: '左折', 'sharp left': '大きく左折' };
+  const ARROW = { uturn: '↶', 'sharp right': '↘', right: '→', 'slight right': '↗', straight: '↑',
+    'slight left': '↖', left: '←', 'sharp left': '↙' };
+  function text(s) {
+    const d = DIR[s.modifier] || '';
+    switch (s.type) {
+      case 'arrive': return '目的地';
+      case 'depart': return '出発';
+      case 'roundabout': case 'rotary': return s.exit ? `ロータリーを${s.exit}番目の出口へ` : 'ロータリー';
+      case 'fork': return /right/.test(s.modifier) ? '分岐を右方向' : /left/.test(s.modifier) ? '分岐を左方向' : '分岐を直進';
+      case 'on ramp': return d && d !== '直進' ? `${d}して入口へ` : '入口へ';
+      case 'off ramp': return d && d !== '直進' ? `${d}して出口へ` : '出口へ';
+      case 'merge': return '合流';
+      case 'end of road': return `突き当たりを${d || '曲がる'}`;
+      case 'new name': case 'continue': return !d || d === '直進' ? '道なりに直進' : d;
+      default: return d || '直進';
+    }
+  }
+  const icon = (s) => s.type === 'arrive' ? '🏁' : (s.type === 'roundabout' || s.type === 'rotary') ? '⟳' : (ARROW[s.modifier] || '↑');
+  // 道なりの「名前が変わるだけ」は案内しない
+  const meaningful = (s) => !(['new name', 'continue', 'notification', 'depart'].includes(s.type) && (!s.modifier || s.modifier === 'straight'));
+
+  function speak(t) {
+    if (!voice || !('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t);
+    u.lang = 'ja-JP'; u.rate = 1.05;
+    speaking = u;
+    u.onend = u.onerror = () => { if (speaking === u) { speaking = null; Music.duck(false); } };
+    Music.duck(true);
+    speechSynthesis.speak(u);
+  }
+
+  function setRouteData(gj) {
+    for (const m of [map, Mini.map]) { const src = m.getSource && m.getSource('route'); if (src) src.setData(gj); }
+  }
+
+  // ---- 経路検索 ----
+  async function fetchRoute(from, to, useBearing) {
+    let url = `${CONFIG.routerUrl}/${from[0].toFixed(6)},${from[1].toFixed(6)};${to[0].toFixed(6)},${to[1].toFixed(6)}` +
+      '?overview=full&geometries=geojson&steps=true';
+    // 車の向きに合った道から出発させる(いきなりUターンのルートを避ける)
+    if (useBearing) url += `&bearings=${Math.round(((car.heading / DEG) % 360 + 360) % 360)},75;`;
+    const r = await fetch(url);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.code !== 'Ok' || !j.routes || !j.routes.length) throw new Error(j.message || j.code || r.status);
+    const wp = j.waypoints && j.waypoints[j.waypoints.length - 1];
+    return { route: j.routes[0], end: wp ? wp.location : to };   // end: 道路上に寄せた目的地
+  }
+  async function request(isReroute) {
+    if (busy || !dest) return;
+    busy = true; lastReq = performance.now();
+    const target = dest;
+    try {
+      let res;
+      try { res = await fetchRoute([car.lng, car.lat], target, true); }
+      catch (e) { res = await fetchRoute([car.lng, car.lat], target, false); }
+      if (dest !== target) return;    // 検索中に目的地が変わった/終了した
+      const r = res.route;
+      // 目的地を道路上の点に寄せる(建物の中をクリックしても到着できるように)
+      if (dist(res.end, target) > 1) { dest = res.end; markers.forEach((mk) => mk.setLngLat(dest)); }
+      setRoute(r);
+      speak(isReroute ? 'ルートを再検索しました' : `${intro || 'ルート案内を開始します'}。目的地まで${sayDist(r.distance)}です`);
+    } catch (e) {
+      console.warn('ルート検索失敗', e);
+      toast('ルート検索に失敗しました', 1600);
+      if (!route) $('navText').textContent = 'ルート検索に失敗しました';
+    } finally { busy = false; }
+  }
+  function setRoute(r) {
+    const coords = r.geometry.coordinates, cum = [0];
+    for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + dist(coords[i - 1], coords[i]));
+    // 各曲がり角がルート上の何 m 地点かを求める(前から順に)
+    const steps = [];
+    let k = 0;
+    for (const leg of r.legs) for (const s of leg.steps) {
+      const loc = s.maneuver.location;
+      let best = k, bd = Infinity;
+      for (let i = k; i < coords.length; i++) {
+        const d = dist(coords[i], loc);
+        if (d < bd) { bd = d; best = i; }
+        if (bd < 0.5) break;
+      }
+      k = best;
+      steps.push({ along: cum[best], type: s.maneuver.type, modifier: s.maneuver.modifier || '', exit: s.maneuver.exit, name: s.name || '', said: {} });
+    }
+    route = { coords, cum, total: cum[cum.length - 1], duration: r.duration, steps };
+    offSince = 0;
+    setRouteData({ type: 'Feature', properties: {}, geometry: r.geometry });
+  }
+
+  // ---- 毎フレーム(5回/秒) ----
+  function update(now) {
+    if (!route) {   // 検索に失敗していたら少し待って再試行
+      if (dest && !busy && now - lastReq > 6000) request(false);
+      return;
+    }
+    if (now - lastUpd < 200) return;
+    lastUpd = now;
+    const o = [car.lng, car.lat], c = route.coords;
+    // ルート上の最寄り点
+    let best = Infinity, along = 0;
+    for (let i = 0; i < c.length - 1; i++) {
+      const [ax, ay] = xy(c[i], o), [bx, by] = xy(c[i + 1], o);
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const t = L2 ? clamp(-(ax * dx + ay * dy) / L2, 0, 1) : 0;
+      const px = ax + t * dx, py = ay + t * dy, d2 = px * px + py * py;
+      if (d2 < best) { best = d2; along = route.cum[i] + t * (route.cum[i + 1] - route.cum[i]); }
+    }
+    const off = Math.sqrt(best), remaining = Math.max(0, route.total - along);
+    lastAlong = along;
+
+    if (dist(o, dest) < 25 || (remaining < 15 && off < 30)) {
+      if (!managed) { arrive(); return; }
+      $('navArrow').textContent = '🏁'; $('navDist').textContent = '到着';
+      $('navText').textContent = '目的地周辺です'; $('navRoad').textContent = '';
+      $('navRemain').textContent = ''; $('navFoot').classList.remove('off');
+      return;
+    }
+
+    const isOff = off > CONFIG.offRouteMeters;
+    if (isOff && !V.fly) {   // 空飛ぶ車は道路に沿わないので再検索しない
+      if (!offSince) offSince = now;
+      else if (now - offSince > 1500 && now - lastReq > 5000) { offSince = 0; toast('ルートを再検索します'); request(true); }
+    } else offSince = 0;
+
+    const steps = route.steps;
+    const step = steps.find((s, i) => i > 0 && meaningful(s) && s.along > along + 3) || steps[steps.length - 1];
+    const nd = Math.max(0, step.along - along);
+
+    $('navArrow').textContent = icon(step);
+    $('navDist').textContent = fmtDist(nd);
+    $('navText').textContent = text(step);
+    $('navRoad').textContent = step.type === 'arrive' ? '' : step.name;
+    const eta = Math.max(1, Math.ceil(route.duration * (remaining / Math.max(1, route.total)) / 60));
+    $('navRemain').textContent = `残り ${fmtDist(remaining)} ・ 約${eta}分` + (isOff ? ' ・ ルート外' : '');
+    $('navFoot').classList.toggle('off', isOff);
+
+    // 音声案内(300m 手前とまもなく)
+    if (!isOff) {
+      const phrase = text(step) + 'です';
+      if (nd <= 60 && !step.said.near) { step.said.near = step.said.far = true; speak('まもなく、' + phrase); }
+      else if (nd <= 300 && nd > 120 && !step.said.far) { step.said.far = true; speak(`${sayDist(nd)}先、${phrase}`); }
+    }
+  }
+
+  function arrive() {
+    clear(true);
+    toast('🏁 目的地に到着しました', 2200);
+    speak('目的地に到着しました。案内を終了します');
+  }
+  function clear(keepSpeech) {
+    route = null; dest = null; offSince = 0; managed = false;
+    markers.forEach((mk) => mk.remove()); markers = [];
+    setRouteData(EMPTY_FC);
+    $('nav').classList.add('hidden');
+    if (!keepSpeech && 'speechSynthesis' in window) { speechSynthesis.cancel(); speaking = null; Music.duck(false); }
+  }
+  // opts.managed: 配達用(到着で自動終了しない・✕ を隠す) / opts.pin: 目的地のアイコン
+  function setDestination(ll, name, opts = {}) {
+    if (!opts.managed && Delivery.isBusy()) { toast('配達中は目的地を変更できません', 1400); return; }
+    clear(opts.managed);
+    dest = ll;
+    managed = !!opts.managed;
+    intro = opts.intro || '';
+    $('navEnd').classList.toggle('hidden', managed);
+    const pin = (cls) => { const el = document.createElement('div'); el.className = 'destpin ' + cls; el.textContent = opts.pin || '🏁'; return el; };
+    markers.push(new maplibregl.Marker({ element: pin(''), anchor: 'bottom-left' }).setLngLat(ll).addTo(map));
+    markers.push(new maplibregl.Marker({ element: pin('small'), anchor: 'bottom-left' }).setLngLat(ll).addTo(Mini.map));
+    $('nav').classList.remove('hidden');
+    $('navArrow').textContent = '…'; $('navDist').textContent = '--';
+    $('navText').textContent = 'ルート検索中…'; $('navRoad').textContent = name; $('navRemain').textContent = '';
+    if (!managed) toast('目的地: ' + name, 1400);
+    request(false);
+  }
+
+  $('navEnd').onclick = (e) => { clear(); toast('案内を終了しました'); e.currentTarget.blur(); };
+  $('navVoice').onclick = (e) => {
+    voice = !voice;
+    try { localStorage.setItem('mtd-nav-voice', voice ? '1' : '0'); } catch (err) {}
+    e.currentTarget.textContent = voice ? '🔊' : '🔇';
+    if (!voice && 'speechSynthesis' in window) { speechSynthesis.cancel(); Music.duck(false); }
+    e.currentTarget.blur();
+  };
+
+  return { setDestination, clear, update, speak, dist, fmtDist, pointAhead, getDest: () => dest, getRoute: () => route && route.coords };
+})();
+window.nav = Nav;  // デバッグ用
+
+/* ---------- 目的地の入力(住所・地名の検索) ----------
+ * 住所っぽい入力 → 国土地理院の住所検索を優先、地名・施設名 → OpenStreetMap(Nominatim)を優先。
+ * どちらもキー不要。結果は東京都内(おおよその範囲)に絞る。検索は Enter を押したときだけ(Nominatim は 1 秒 1 回まで)。 */
+const DestSearch = (() => {
+  const input = $('destInput'), list = $('destList');
+  let items = [], act = -1, seq = 0;
+  const inTokyo = ([lng, lat]) => lng > 138.9 && lng < 140.0 && lat > 35.45 && lat < 35.95;
+  const looksLikeAddress = (q) => /[都区市町村]|丁目|番地?|号|[0-9０-９]/.test(q);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  async function gsi(q) {
+    const r = await fetch('https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(q));
+    const j = await r.json();
+    return (Array.isArray(j) ? j : [])
+      .filter((f) => f.properties && String(f.properties.title).startsWith('東京都'))
+      .map((f) => ({ name: f.properties.title, sub: '住所(国土地理院)', ll: f.geometry.coordinates }));
+  }
+  async function osm(q) {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&accept-language=ja&countrycodes=jp' +
+      '&viewbox=138.9,35.95,140.0,35.45&bounded=1&q=' + encodeURIComponent(q));
+    const j = await r.json();
+    return (Array.isArray(j) ? j : []).map((x) => {
+      const parts = String(x.display_name).split(',').map((s) => s.trim());
+      const sub = parts.slice(1).filter((p) => !/^[0-9-]+$|^日本$|^東京都?$/.test(p)).slice(0, 3).reverse().join(' ');
+      return { name: x.name || parts[0], sub: sub || '地名(OpenStreetMap)', ll: [+x.lon, +x.lat] };
+    });
+  }
+
+  function show(list_, head, info) {
+    items = list_;
+    act = -1;
+    let html = head ? `<li class="head">${esc(head)}</li>` : '';
+    html += items.map((it, i) => `<li data-i="${i}">${esc(it.name)}${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</li>`).join('');
+    if (info) html += `<li class="info">${esc(info)}</li>`;
+    list.innerHTML = html;
+    list.classList.remove('hidden');
+  }
+  const hide = () => { list.classList.add('hidden'); items = []; act = -1; };
+  const spotItems = (q) => SPOTS.filter((s) => !q || s.name.includes(q)).map((s) => ({ name: s.name, sub: 'おすすめスポット', ll: [s.lng, s.lat] }));
+  function showSpots() {
+    const q = input.value.trim();
+    show(spotItems(q), q ? '' : 'おすすめ', q ? `Enter で「${q}」を検索` : '住所や地名を入力して Enter で検索');
+  }
+
+  async function search(q) {
+    const my = ++seq;
+    show([], '', '検索中…');
+    const [a, b] = await Promise.all([gsi(q).catch(() => []), osm(q).catch(() => [])]);
+    if (my !== seq) return;            // もっと新しい検索が走っている
+    // 地名・施設名のときは、国土地理院の結果は一部の文字だけ一致した無関係な住所が多いので、
+    // OpenStreetMap で見つかればそちらだけ、見つからなければ入力をそのまま含む住所だけを使う
+    const ordered = looksLikeAddress(q) ? [...a, ...b] : (b.length ? b : a.filter((it) => it.name.includes(q)));
+    const seen = new Set(), res = [];
+    for (const it of [...spotItems(q), ...ordered]) {
+      if (!it.ll || !inTokyo(it.ll) || seen.has(it.name)) continue;
+      seen.add(it.name); res.push(it);
+    }
+    if (!res.length) show([], '', `東京都内で「${q}」は見つかりませんでした`);
+    else show(res.slice(0, 10), '検索結果');
+  }
+  function choose(it) {
+    hide();
+    input.value = '';
+    input.blur();
+    Nav.setDestination(it.ll, it.name);
+  }
+  function highlight() {
+    [...list.querySelectorAll('li[data-i]')].forEach((li) => li.classList.toggle('act', +li.dataset.i === act));
+    const li = list.querySelector('li.act');
+    if (li) li.scrollIntoView({ block: 'nearest' });
+  }
+
+  input.addEventListener('focus', showSpots);
+  input.addEventListener('input', showSpots);
+  input.addEventListener('blur', () => setTimeout(hide, 120));
+  input.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;   // 日本語変換中の Enter は無視
+    if (e.key === 'ArrowDown' && items.length) { act = (act + 1) % items.length; highlight(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp' && items.length) { act = (act - 1 + items.length) % items.length; highlight(); e.preventDefault(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (act >= 0 && items[act]) choose(items[act]);
+      else if (input.value.trim()) search(input.value.trim());
+    } else if (e.key === 'Escape') { hide(); input.blur(); }
+  });
+  // mousedown で選ぶ(click だと先に blur で閉じてしまう)
+  list.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const li = e.target.closest('li[data-i]');
+    if (li && items[+li.dataset.i]) choose(items[+li.dataset.i]);
+  });
+  return { search };
+})();
+
+/* =====================================================================
+ * 配達ゲーム(スマホアプリ「まちデリ」)
+ *  off → idle(注文待ち)→ offer(注文が届く)→ pickup(お店へ)→ dropoff(お届け先へ)→ result → idle …
+ *  お店は地図データ(OpenMapTiles の poi レイヤー)から実在の飲食店を拾う。見つからなければ架空の店
+ * ===================================================================== */
+const Delivery = (() => {
+  const SHOP_CLASSES = new Set(['restaurant', 'fast_food', 'cafe', 'bakery', 'ice_cream', 'bar', 'pub', 'beer', 'confectionery', 'deli', 'food_court']);
+  const FALLBACK_SHOPS = ['中華料理 龍門', 'カレー亭 スパイス', 'ハンバーガー堂', 'すし処 海', 'ピッツェリア ナポリ', 'ラーメン 一番星',
+    'タコス・ソル', 'とんかつ かつ吉', 'ベーカリー こむぎ', 'タイ料理 バーンタイ'];
+  const CUSTOMERS = ['佐藤', '鈴木', '高橋', '田中', '伊藤', '渡辺', '山本', '中村', '小林', '加藤', '吉田', '山田', '松本', '井上'];
+  const MENU = ['からあげ弁当', '醤油ラーメン', 'マルゲリータ', 'チーズバーガーセット', 'グリーンカレー', '特上にぎり', 'タコライス',
+    'ロースかつ丼', 'クロワッサン 3個', 'カフェラテとサンド', '麻婆豆腐セット', 'パッタイ', 'ガパオライス', '牛丼 大盛り'];
+  const RANKS = [[0, 'ルーキー'], [5, 'ブロンズ'], [15, 'シルバー'], [40, 'ゴールド'], [100, 'プラチナ']];
+  const HOLD_PICKUP = 2.0, HOLD_DROPOFF = 1.5, NEAR_M = 30, STOP_KMH = 8, LOW_ALT = 12;   // 空飛ぶ車は 12m 未満まで降りる
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const mmss = (s) => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const yen = (n) => '¥' + n.toLocaleString();
+  const rankOf = (n) => { let r = RANKS[0]; for (const x of RANKS) if (n >= x[0]) r = x; return r; };
+
+  const stats = { count: 0, earnings: 0, ratingSum: 0, ratingN: 0 };
+  try { Object.assign(stats, JSON.parse(localStorage.getItem('mtd-delivery-stats') || '{}')); } catch (e) {}
+  const save = () => { try { localStorage.setItem('mtd-delivery-stats', JSON.stringify(stats)); } catch (e) {} };
+
+  let mode = 'off', order = null, result = null, session = 0;
+  let nextAt = 0, offerUntil = 0, resultUntil = 0, hold = 0, lastTick = 0, near = false, kmhNow = 0, distNow = 0;
+
+  function randomAround(o, dmin, dmax) {
+    const a = Math.random() * Math.PI * 2, d = rnd(dmin, dmax);
+    return [o[0] + Math.sin(a) * d / mPerDegLng(o[1]), o[1] + Math.cos(a) * d / M_PER_DEG_LAT];
+  }
+  function findShop() {
+    const o = [car.lng, car.lat], found = new Map();
+    for (const m of [map, Mini.map]) {
+      let feats = [];
+      try { feats = m.querySourceFeatures('openmaptiles', { sourceLayer: 'poi' }); } catch (e) {}
+      for (const f of feats) {
+        const p = f.properties || {};
+        if (!SHOP_CLASSES.has(p.class) && !SHOP_CLASSES.has(p.subclass)) continue;
+        const name = p['name:ja'] || p.name;
+        if (!name || !f.geometry || f.geometry.type !== 'Point') continue;
+        const ll = f.geometry.coordinates, d = Nav.dist(o, ll);
+        if (d < 200 || d > 1800 || found.has(name)) continue;
+        found.set(name, { name, ll });
+      }
+    }
+    const list = [...found.values()];
+    return list.length ? pick(list) : { name: pick(FALLBACK_SHOPS), ll: randomAround(o, 400, 1200) };
+  }
+
+  // ---- 状態遷移 ----
+  function makeOffer(now) {
+    const shop = findShop();
+    const custLL = randomAround(shop.ll, 500, 1800);
+    const d1 = Nav.dist([car.lng, car.lat], shop.ll) * 1.3, d2 = Nav.dist(shop.ll, custLL) * 1.3;   // 道のりは直線の約1.3倍
+    const reward = Math.round((250 + d1 * 0.04 + d2 * 0.15) / 10) * 10;
+    const limit = (d1 + d2) / (V.avgKmh / 3.6) + 120;
+    order = { shop, cust: { ll: custLL, name: pick(CUSTOMERS) + ' 様' }, item: pick(MENU), reward, limit, d1, d2, crashes: 0 };
+    mode = 'offer'; offerUntil = now + 15000;
+    Engine.ping();
+    Nav.speak(`新しい注文です。報酬は${reward}円です`);
+    render();
+  }
+  function accept() {
+    if (mode !== 'offer') return;
+    mode = 'pickup'; hold = 0;
+    order.deadline = performance.now() + order.limit * 1000;
+    Nav.setDestination(order.shop.ll, order.shop.name, { managed: true, pin: '🍽', intro: `${order.shop.name}へ商品を受け取りに向かいます` });
+    render();
+  }
+  function decline(silent) {
+    if (mode !== 'offer') return;
+    order = null; mode = 'idle'; nextAt = performance.now() + rnd(5000, 10000);
+    if (!silent) toast('注文を断りました');
+    render();
+  }
+  function cancel() {
+    if (mode !== 'pickup' && mode !== 'dropoff') return;
+    Nav.clear(); order = null; mode = 'idle'; nextAt = performance.now() + rnd(6000, 12000);
+    stats.ratingSum += 3; stats.ratingN++; save();      // キャンセルは評価が少し下がる
+    toast('配達をキャンセルしました', 1400);
+    render();
+  }
+  function toggleOnline() {
+    if (mode === 'pickup' || mode === 'dropoff') { toast('配達中はオフラインにできません', 1400); return; }
+    if (mode === 'off') { mode = 'idle'; nextAt = performance.now() + rnd(2500, 5000); toast('🟢 オンライン', 1200); }
+    else { mode = 'off'; order = null; toast('オフライン'); }
+    render();
+  }
+  function pickedUp() {
+    mode = 'dropoff'; hold = 0;
+    toast('🥡 商品を受け取りました', 1400);
+    Engine.ping();
+    Nav.setDestination(order.cust.ll, order.cust.name, { managed: true, pin: '🏠', intro: '商品を受け取りました。お届け先へ向かいます' });
+    render();
+  }
+  function complete(now) {
+    const lateSec = Math.max(0, (now - order.deadline) / 1000);
+    let rating = 5;
+    if (lateSec > 0) rating -= lateSec > 120 ? 2 : 1;
+    rating = clamp(rating - Math.min(2, order.crashes), 1, 5);
+    const tip = lateSec === 0 && order.crashes === 0 ? Math.round(rnd(1, 5)) * 50 : 0;
+    const pay = order.reward + tip;
+    const rankBefore = rankOf(stats.count)[1];
+    stats.count++; stats.earnings += pay; stats.ratingSum += rating; stats.ratingN++; save();
+    session += pay;
+    const rankAfter = rankOf(stats.count)[1];
+    result = { pay, tip, rating, lateSec, crashes: order.crashes, reward: order.reward, rankUp: rankAfter !== rankBefore ? rankAfter : '' };
+    Nav.clear(true);
+    order = null; mode = 'result'; resultUntil = now + 6000;
+    Engine.chime();
+    toast(`✅ 配達完了 +${yen(pay)}`, 1800);
+    Nav.speak(`配達完了。${pay}円を獲得しました` + (result.rankUp ? `。ランクが${result.rankUp}に上がりました` : ''));
+    render();
+  }
+  function onCrash(impact) {
+    if (mode === 'dropoff' && impact > 12) { order.crashes++; toast('🥡 料理が崩れたかも…', 1200); }
+  }
+
+  // ---- 毎フレーム ----
+  function update(now, dt) {
+    switch (mode) {
+      case 'idle': if (now > nextAt) makeOffer(now); break;
+      case 'offer': if (now > offerUntil) { decline(true); toast('注文を見送りました'); } break;
+      case 'pickup': case 'dropoff': {
+        const dest = Nav.getDest();
+        if (!dest) break;
+        distNow = Nav.dist([car.lng, car.lat], dest);
+        kmhNow = Math.abs(car.vf) * 3.6;
+        near = distNow < NEAR_M;
+        if (near && kmhNow < STOP_KMH && car.alt < LOW_ALT) {
+          hold += dt;
+          if (hold >= (mode === 'pickup' ? HOLD_PICKUP : HOLD_DROPOFF)) { mode === 'pickup' ? pickedUp() : complete(now); }
+        } else hold = Math.max(0, hold - dt * 2);
+        break;
+      }
+      case 'result': if (now > resultUntil) { mode = 'idle'; nextAt = now + rnd(4000, 9000); render(); } break;
+    }
+    if (now - lastTick > 100) { lastTick = now; tick(now); }
+  }
+
+  // ---- 表示 ----
+  function render() {
+    const sh = $('sheet');
+    const o = order;
+    switch (mode) {
+      case 'off':
+        sh.innerHTML = `<div class="sh-badge blue">オフライン</div><div class="sh-t">配達をはじめましょう</div>
+          <div class="sh-s">オンラインにすると近くのお店から注文が届きます(O キー)</div>
+          <div class="sh-btns"><button class="primary" data-act="online">オンラインにする</button></div>`;
+        break;
+      case 'idle':
+        sh.innerHTML = `<div class="sh-badge ok">オンライン</div><div class="sh-t"><span class="spin"></span>注文を探しています…</div>
+          <div class="sh-s">走りながら待ちましょう</div>
+          <div class="sh-btns"><button data-act="online">オフラインにする</button></div>`;
+        break;
+      case 'offer':
+        sh.innerHTML = `<div class="sh-badge">新しい注文</div><div class="sh-price">${yen(o.reward)}</div>
+          <div class="sh-row"><span>🍽 ${esc(o.shop.name)}</span><span>${Nav.fmtDist(o.d1)}</span></div>
+          <div class="sh-row"><span>🏠 ${esc(o.cust.name)}</span><span>${Nav.fmtDist(o.d2)}</span></div>
+          <div class="sh-row"><span>🥡 ${esc(o.item)}</span><span>制限 ${Math.ceil(o.limit / 60)}分</span></div>
+          <div class="bar"><div id="shBar"></div></div>
+          <div class="sh-btns"><button data-act="decline">断る</button><button class="primary" data-act="accept">受ける (Enter)</button></div>`;
+        break;
+      case 'pickup': case 'dropoff': {
+        const p = mode === 'pickup';
+        sh.innerHTML = `<div class="sh-badge ${p ? '' : 'ok'}">${p ? 'お店で受け取り' : 'お届け中'}</div>
+          <div class="sh-t">${p ? '🍽 ' + esc(o.shop.name) : '🏠 ' + esc(o.cust.name)}</div>
+          <div class="sh-row"><span>🥡 ${esc(o.item)}</span><span>${yen(o.reward)}</span></div>
+          <div class="sh-row"><span>残り時間</span><span id="shTime">--</span></div>
+          <div class="sh-s" id="shHint"></div>
+          <div class="bar hold"><div id="shHold"></div></div>
+          <div class="sh-btns"><button data-act="cancel">配達をキャンセル</button></div>`;
+        break;
+      }
+      case 'result': {
+        const r = result;
+        sh.innerHTML = `<div class="sh-badge ok">配達完了</div><div class="sh-price">+${yen(r.pay)}</div>
+          <div class="sh-s">報酬 ${yen(r.reward)}${r.tip ? ` + チップ ${yen(r.tip)}` : ''}</div>
+          <div class="sh-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</div>
+          <div class="sh-s">${r.lateSec ? `${Math.ceil(r.lateSec)}秒の遅れ` : '時間内にお届け'}${r.crashes ? ` ・ 料理が崩れた ×${r.crashes}` : ''}</div>
+          ${r.rankUp ? `<div class="sh-s" style="color:#ff6a00;font-weight:800">🎉 ランクアップ:${r.rankUp}</div>` : ''}`;
+        break;
+      }
+    }
+    $('appEarn').textContent = yen(session);
+    $('appEarn').title = '今回の売上';
+    $('onlineBtn').textContent = mode === 'off' ? 'オフライン' : 'オンライン';
+    $('onlineBtn').classList.toggle('on', mode !== 'off');
+    const avg = stats.ratingN ? (stats.ratingSum / stats.ratingN).toFixed(2) : '-.--';
+    const [, rank] = rankOf(stats.count);
+    const nextRank = RANKS.find((x) => x[0] > stats.count);
+    $('appStats').textContent = `${rank} ・ ★${avg} ・ 累計 ${stats.count}件 / ${yen(stats.earnings)}` +
+      (nextRank ? ` ・ 次のランクまで${nextRank[0] - stats.count}件` : '');
+    tick(performance.now());
+  }
+  function tick(now) {
+    if (mode === 'offer') {
+      const b = $('shBar'); if (b) b.style.width = clamp((offerUntil - now) / 15000 * 100, 0, 100) + '%';
+    } else if (mode === 'pickup' || mode === 'dropoff') {
+      const t = $('shTime'), h = $('shHint'), hb = $('shHold');
+      if (!t) return;
+      const rem = (order.deadline - now) / 1000;
+      t.textContent = rem >= 0 ? mmss(rem) : `${mmss(-rem)} 遅れ`;
+      t.classList.toggle('late', rem < 0);
+      const need = mode === 'pickup' ? HOLD_PICKUP : HOLD_DROPOFF;
+      if (!near) { h.textContent = `目的地まで ${Nav.fmtDist(distNow)}` + (order.crashes ? ` ・ 料理が崩れた ×${order.crashes}` : ''); h.classList.remove('warn'); }
+      else if (car.alt >= LOW_ALT) { h.textContent = '到着!V で高度を下げてください'; h.classList.add('warn'); }
+      else if (kmhNow >= STOP_KMH) { h.textContent = '到着!停車してください'; h.classList.add('warn'); }
+      else { h.textContent = mode === 'pickup' ? '商品を受け取り中…' : '商品をお渡し中…'; h.classList.remove('warn'); }
+      hb.style.width = clamp(hold / need * 100, 0, 100) + '%';
+    }
+  }
+
+  $('sheet').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    b.blur();
+    ({ online: toggleOnline, accept, decline: () => decline(), cancel })[b.dataset.act]();
+  });
+  $('onlineBtn').onclick = (e) => { toggleOnline(); e.currentTarget.blur(); };
+
+  // スマホの時計
+  const clock = () => { const d = new Date(); $('phClock').textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  clock(); setInterval(clock, 10000);
+
+  render();
+  // 配達以外の収入(怪獣撃退ボーナスなど)
+  function addBonus(amount) {
+    session += amount; stats.earnings += amount; save();
+    render();
+  }
+  // タイトルに戻るとき:注文を破棄してオフラインに(累計の成績は残る)
+  function reset() {
+    order = null; result = null; mode = 'off'; hold = 0;
+    render();
+  }
+  // デバッグ・動画撮影用:お店とお届け先を指定して注文を出す。shop / cust = { name, ll: [lng, lat] }
+  function debugOffer(shop, cust, reward = 480, limitSec = 300) {
+    const o = [car.lng, car.lat];
+    order = { shop, cust, item: pick(MENU), reward, limit: limitSec,
+      d1: Nav.dist(o, shop.ll) * 1.3, d2: Nav.dist(shop.ll, cust.ll) * 1.3, crashes: 0 };
+    mode = 'offer'; offerUntil = performance.now() + 60000;
+    Engine.ping();
+    render();
+  }
+  return { update, toggleOnline, accept, onCrash, addBonus, reset, debugOffer, isBusy: () => mode === 'pickup' || mode === 'dropoff' };
+})();
+window.delivery = Delivery;  // デバッグ用
+
+/* =====================================================================
+ * 空のじゃま者(空飛ぶミニで飛行中のみ)
+ *  - カラス:前方から飛んできて、車の未来位置を読んでフンを落とす → 進路・速度を変えて回避
+ *  - 大怪獣ガルザウルス(オリジナル):ルート上を横断。周囲に非常線(通れない円筒)→ 脇を抜けて回避
+ *  - ロケット弾(E):怪獣が出ている間だけ。前方 ±40° に怪獣がいればロックオンして誘導
+ * 位置は「原点 origin からの東・北のメートル」で持ち、描画時に車からの相対位置へ変換する。
+ * three.js のシーン原点は車(高度 car.alt)なので、y は「高度 − car.alt」。
+ * ===================================================================== */
+const Hazards = (() => {
+  const G = 9.8;
+  const CROW_SCALE = 1.5, MAX_CROWS = 6, CROW_SPEED = 16;
+  const KAIJU_SCALE = 1.6, KAIJU_SPEED = 7, KAIJU_HALF_PATH = 320, KAIJU_HP = 24;
+  const CORDON_R = 90, CORDON_H = 160;
+  const AIM_ALT = 42, BODY_LO = 12, BODY_HI = 72, BODY_R = 16, HEAD_ALT = 60;   // 怪獣の当たり判定(m)
+  const CAR_HIT_R = 3.0, CAR_HIT_H = 2.2;   // 車の当たり判定(見た目に合わせた大きさ)
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  let root = null, origin = null, active = false, A = null;
+  let crows = [], drops = [], rockets = [], puffs = [], booms = [], kaiju = null;
+  let nextCrowAt = 0, nextKaijuAt = 0, fireCd = 0, lastMini = 0, lastCordonMsg = 0, lastNoFireMsg = 0, rocketSide = 1;
+  let locked = false;
+
+  // ---- 座標 ----
+  const toEN = (lng, lat) => [(lng - origin[0]) * mPerDegLng(origin[1]), (lat - origin[1]) * M_PER_DEG_LAT];
+  const toLL = (e, n) => [origin[0] + e / mPerDegLng(origin[1]), origin[1] + n / M_PER_DEG_LAT];
+  const carEN = () => toEN(car.lng, car.lat);
+  const place = (obj, e, n, alt, c) => obj.position.set(e - c[0], alt - car.alt, -(n - c[1]));
+  const sceneDir = (ve, vn, vz) => new THREE.Vector3(ve, vz, -vn).normalize();
+
+  function ensureRoot() {
+    if (!root && carLayer.scene) { root = new THREE.Group(); carLayer.scene.add(root); }
+    if (root && !A) makeAssets();
+    return root;
+  }
+  function makeAssets() {
+    A = {
+      sphere: new THREE.SphereGeometry(1, 14, 10),
+      box: new THREE.BoxGeometry(1, 1, 1),
+      beak: (() => { const g = new THREE.ConeGeometry(0.06, 0.26, 8); g.rotateX(-Math.PI / 2); return g; })(),
+      crowM: new THREE.MeshStandardMaterial({ color: 0x121216, metalness: 0.3, roughness: 0.45 }),
+      beakM: new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6 }),
+      dropM: new THREE.MeshStandardMaterial({ color: 0xf4f2e6, emissive: 0x444438, roughness: 0.5 }),
+      smokeG: new THREE.SphereGeometry(1, 8, 6),
+      boomG: new THREE.SphereGeometry(1, 16, 12),
+    };
+  }
+
+  /* ---------- カラス ---------- */
+  function buildCrow() {
+    const g = new THREE.Group(), s = new THREE.Group();
+    s.scale.setScalar(CROW_SCALE); g.add(s);
+    const mk = (geo, mat, sc, pos) => { const m = new THREE.Mesh(geo, mat); m.scale.set(...sc); m.position.set(...pos); return m; };
+    s.add(mk(A.sphere, A.crowM, [0.32, 0.28, 0.75], [0, 0, 0]));
+    s.add(mk(A.sphere, A.crowM, [0.2, 0.2, 0.2], [0, 0.1, -0.68]));
+    s.add(mk(A.beak, A.beakM, [1, 1, 1], [0, 0.07, -0.95]));
+    s.add(mk(A.box, A.crowM, [0.35, 0.04, 0.45], [0, 0.02, 0.85]));
+    const wl = new THREE.Group(), wr = new THREE.Group();
+    wl.position.set(-0.25, 0.08, -0.05); wr.position.set(0.25, 0.08, -0.05);
+    wl.add(mk(A.box, A.crowM, [1.3, 0.03, 0.55], [-0.65, 0, 0]));
+    wr.add(mk(A.box, A.crowM, [1.3, 0.03, 0.55], [0.65, 0, 0]));
+    s.add(wl, wr);
+    g.userData = { wl, wr };
+    return g;
+  }
+  function spawnCrows(now) {
+    const c = carEN(), fx = Math.sin(car.heading), fy = Math.cos(car.heading);
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n && crows.length < MAX_CROWS; i++) {
+      const ahead = rnd(170, 250), side = rnd(-60, 60);
+      const obj = buildCrow(); root.add(obj);
+      crows.push({
+        obj, e: c[0] + fx * ahead + fy * side, n: c[1] + fy * ahead - fx * side, alt: car.alt + rnd(16, 28),
+        ve: -fx * CROW_SPEED, vn: -fy * CROW_SPEED, drops: 0, cd: 0, born: now, flap: Math.random() * 6, passed: false,
+      });
+    }
+    Engine.caw();
+  }
+  function killCrow(i) {
+    const k = crows[i];
+    boom(k.e, k.n, k.alt, 2.5, 0x333333);
+    root.remove(k.obj); crows.splice(i, 1);
+  }
+  function updateCrows(dt, now, c) {
+    for (let i = crows.length - 1; i >= 0; i--) {
+      const k = crows[i];
+      // 車の少し先へ向かって旋回(真上を通り過ぎたらそのまま直進)
+      const de = c[0] + car.vx * 1.5 - k.e, dn = c[1] + car.vy * 1.5 - k.n, dh = Math.hypot(de, dn);
+      if (!k.passed) {
+        if (dh < 25) k.passed = true;
+        const cur = Math.atan2(k.ve, k.vn);
+        let d = ((Math.atan2(de, dn) - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        d = clamp(d, -1.2 * dt, 1.2 * dt);
+        k.ve = Math.sin(cur + d) * CROW_SPEED; k.vn = Math.cos(cur + d) * CROW_SPEED;
+      }
+      k.alt += clamp(car.alt + 18 - k.alt, -3, 3) * dt;
+      k.e += k.ve * dt; k.n += k.vn * dt;
+      k.cd -= dt;
+      // フン投下:落ちる間に「車がこのまま進んだ位置」と「フンの着地点」が重なるなら落とす
+      const h = k.alt - (car.alt + 1.7);
+      if (h > 2 && k.cd <= 0 && k.drops < 3) {
+        const t = Math.sqrt(2 * h / G);
+        if (Math.hypot(c[0] + car.vx * t - (k.e + k.ve * t), c[1] + car.vy * t - (k.n + k.vn * t)) < 4) {
+          const obj = new THREE.Mesh(A.sphere, A.dropM); obj.scale.set(0.45, 0.6, 0.45); root.add(obj);
+          drops.push({ obj, e: k.e, n: k.n, alt: k.alt - 0.6, ve: k.ve, vn: k.vn, vz: 0 });
+          k.cd = 1.2; k.drops++;
+        }
+      }
+      // 体当たり
+      if (Math.hypot(k.e - c[0], k.n - c[1], k.alt - (car.alt + 1.7)) < 3.2) {
+        killCrow(i); shake = Math.max(shake, 0.35); toast('🐦 カラスと衝突!'); Engine.thud(); continue;
+      }
+      if (now - k.born > 30000 || Math.hypot(k.e - c[0], k.n - c[1]) > 500) { root.remove(k.obj); crows.splice(i, 1); continue; }
+      place(k.obj, k.e, k.n, k.alt, c);
+      k.obj.rotation.y = -Math.atan2(k.ve, k.vn);
+      k.flap += dt * 11;
+      k.obj.userData.wl.rotation.z = Math.sin(k.flap) * 0.7;
+      k.obj.userData.wr.rotation.z = -Math.sin(k.flap) * 0.7;
+    }
+  }
+  function updateDrops(dt, c) {
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      d.vz -= G * dt;
+      d.e += d.ve * dt; d.n += d.vn * dt; d.alt += d.vz * dt;
+      if (Math.hypot(d.e - c[0], d.n - c[1]) < CAR_HIT_R && Math.abs(d.alt - (car.alt + 1.7)) < CAR_HIT_H) {
+        root.remove(d.obj); drops.splice(i, 1); splat(); continue;
+      }
+      if (d.alt < 0) { root.remove(d.obj); drops.splice(i, 1); continue; }
+      place(d.obj, d.e, d.n, d.alt, c);
+    }
+  }
+  function splat() {
+    const el = $('splat');
+    el.innerHTML = '';
+    const W = innerWidth, H = innerHeight;
+    for (let i = 0; i < 6; i++) {
+      const s = rnd(90, 260), b = document.createElement('i');
+      b.style.cssText = `left:${rnd(0.15, 0.75) * W}px;top:${rnd(0.1, 0.7) * H}px;width:${s}px;height:${s * rnd(0.7, 1.1)}px`;
+      el.appendChild(b);
+    }
+    el.classList.add('show');
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('show')));
+    Engine.splatSnd();
+    shake = Math.max(shake, 0.2);
+    toast('💩 フン直撃!', 1400);
+  }
+
+  /* ---------- 大怪獣ガルザウルス(オリジナル) ---------- */
+  function buildKaiju() {
+    const root = new THREE.Group(), S = new THREE.Group();
+    S.scale.setScalar(KAIJU_SCALE); root.add(S);
+    const body = new THREE.Group(); S.add(body);
+    const skin = new THREE.MeshStandardMaterial({ color: 0x3d4a40, roughness: 0.9, emissive: 0xff3300, emissiveIntensity: 0 });
+    const belly = new THREE.MeshStandardMaterial({ color: 0x8c8a62, roughness: 0.85 });
+    const spikeM = new THREE.MeshStandardMaterial({ color: 0x4a1c00, emissive: 0xff6a1a, emissiveIntensity: 1.6, roughness: 0.4 });
+    const eyeM = new THREE.MeshBasicMaterial({ color: 0xffd23f });
+    const boneM = new THREE.MeshStandardMaterial({ color: 0xe8e4d0, roughness: 0.5 });
+    const sph = new THREE.SphereGeometry(1, 20, 16), boxG = new THREE.BoxGeometry(1, 1, 1);
+    const cone = new THREE.ConeGeometry(1, 1, 6), spikeG = new THREE.ConeGeometry(1, 1, 5);
+    const mk = (geo, mat, s, p, parent) => { const m = new THREE.Mesh(geo, mat); m.scale.set(...s); m.position.set(...p); parent.add(m); return m; };
+
+    mk(sph, skin, [9, 14, 8.5], [0, 27, 2], body).rotation.x = 0.18;            // 胴
+    mk(sph, belly, [6.5, 11, 4.5], [0, 25.5, -3.6], body).rotation.x = 0.18;    // 腹
+    mk(sph, skin, [5, 6, 5], [0, 38.5, -2.5], body);                            // 首
+    const head = new THREE.Group(); head.position.set(0, 42, -4); body.add(head);
+    mk(sph, skin, [4.2, 3.8, 5.5], [0, 0, -1.5], head);                         // 頭
+    mk(boxG, skin, [5, 3.2, 7], [0, -0.6, -6], head);                           // 鼻先
+    const jaw = new THREE.Group(); jaw.position.set(0, -2, -2.5); head.add(jaw);
+    mk(boxG, belly, [4.4, 1.4, 7], [0, -0.5, -3.4], jaw);                       // あご
+    for (let i = 0; i < 4; i++) for (const s of [-1, 1]) {
+      mk(cone, boneM, [0.35, 1.1, 0.35], [s * 1.9, -2.6, -5 - i * 1.4], head).rotation.x = Math.PI;   // 牙
+    }
+    for (const s of [-1, 1]) {
+      mk(sph, eyeM, [0.7, 0.55, 0.7], [s * 2.6, 1, -4], head);                  // 光る目
+      const horn = mk(cone, boneM, [0.9, 4, 0.9], [s * 2.2, 3, 0.5], head);     // 角
+      horn.rotation.x = 0.9; horn.rotation.z = -s * 0.3;
+    }
+    // 背中の結晶トゲ
+    for (const [y, z, sz] of [[41, 1.5, 3], [36.5, 4.5, 4.5], [31.5, 7, 5.5], [26, 8.5, 5], [20.5, 9.5, 4.2]]) {
+      mk(spikeG, spikeM, [sz * 0.55, sz * 1.6, sz * 0.55], [0, y, z + 1], body).rotation.x = 0.5;
+    }
+    // 腕
+    for (const s of [-1, 1]) {
+      const arm = new THREE.Group(); arm.position.set(s * 7.5, 32, -4.5); arm.rotation.set(-0.6, 0, s * 0.25); body.add(arm);
+      mk(sph, skin, [1.8, 4.5, 1.8], [0, -4, 0], arm);
+      for (let j = -1; j <= 1; j++) mk(cone, boneM, [0.3, 1.2, 0.3], [j * 0.7, -8.7, -0.3], arm).rotation.x = Math.PI;
+    }
+    // 脚(胴とは別に振る)
+    const hips = [];
+    for (const s of [-1, 1]) {
+      const hip = new THREE.Group(); hip.position.set(s * 6.2, 18, 3); S.add(hip);
+      mk(sph, skin, [4.2, 7.5, 4.8], [0, -4.5, 0], hip);
+      mk(sph, skin, [3, 5.5, 3.2], [0, -12, -1], hip);
+      mk(boxG, skin, [5.5, 2.2, 8], [0, -17, -2.5], hip);
+      for (let j = -1; j <= 1; j++) mk(cone, boneM, [0.5, 1.6, 0.5], [j * 1.8, -17.2, -7.2], hip).rotation.x = -Math.PI / 2;
+      hips.push(hip);
+    }
+    // 尾(つないだ節を少しずつ揺らす)
+    const tail = [];
+    let parent = body, pos = [0, 17, 8];
+    for (let i = 0; i < 7; i++) {
+      const seg = new THREE.Group(); seg.position.set(...pos); parent.add(seg);
+      const r = 4.6 * (1 - i / 7.5), len = 7;
+      mk(sph, skin, [r, r * 0.9, len * 0.65], [0, 0, len * 0.5], seg);
+      if (i < 3) mk(spikeG, spikeM, [r * 0.35, r * 1.1, r * 0.35], [0, r * 0.8, len * 0.4], seg).rotation.x = 0.6;
+      seg.rotation.x = i === 0 ? 0.25 : 0.05;
+      tail.push(seg); parent = seg; pos = [0, 0, len];
+    }
+    return { root, body, head, jaw, hips, tail, skin };
+  }
+  function buildCordon() {
+    // 黄色と黒の「立入禁止」テープの輪 3 本(不透明)。
+    // ※ 大きな半透明の円筒にすると、環境によって真っ白や真っ赤に描かれて怪獣が見えなくなるため、半透明は使わない
+    const g = new THREE.Group();
+
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 32;
+    const c2 = cv.getContext('2d');
+    c2.fillStyle = '#ffd400'; c2.fillRect(0, 0, 512, 32);
+    c2.fillStyle = '#111';
+    for (let x = -32; x < 560; x += 32) { c2.beginPath(); c2.moveTo(x, 32); c2.lineTo(x + 16, 32); c2.lineTo(x + 32, 0); c2.lineTo(x + 16, 0); c2.fill(); }
+    c2.fillStyle = '#ffd400'; c2.fillRect(166, 3, 180, 26);
+    c2.fillStyle = '#111'; c2.font = 'bold 18px sans-serif'; c2.textAlign = 'center'; c2.textBaseline = 'middle';
+    c2.fillText('立入禁止 KEEP OUT', 256, 17);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = THREE.RepeatWrapping; tex.repeat.set(14, 1);
+    const tapeM = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+    for (const y of [25, 80, 140]) {
+      const tg = new THREE.CylinderGeometry(CORDON_R, CORDON_R, 7, 72, 1, true);
+      const tape = new THREE.Mesh(tg, tapeM);
+      tape.position.y = y;
+      g.add(tape);
+    }
+    return g;
+  }
+  function spawnKaiju(now) {
+    // ルート(なければ進行方向)の 350〜550m 先を、道と直角に横切らせる
+    let P, bearing;
+    const ahead = Nav.pointAhead(rnd(350, 550));
+    if (ahead) { P = toEN(...ahead.ll); bearing = ahead.bearing; }
+    else { const c = carEN(), d = rnd(350, 500); P = [c[0] + Math.sin(car.heading) * d, c[1] + Math.cos(car.heading) * d]; bearing = car.heading; }
+    const pb = bearing + (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2;
+    const dir = [Math.sin(pb), Math.cos(pb)];
+    const m = buildKaiju(), cordon = buildCordon();
+    root.add(m.root, cordon);
+    kaiju = { m, cordon, dir, e: P[0] - dir[0] * KAIJU_HALF_PATH, n: P[1] - dir[1] * KAIJU_HALF_PATH,
+      travel: 0, total: KAIJU_HALF_PATH * 2, hp: KAIJU_HP, phase: 'walk', t: 0, step: 0, lastSign: 0, sink: 0,
+      flash: 0, roarT: 2.5, roared2: false, fallDir: 1 };
+    $('kaijuHud').classList.remove('hidden');
+    $('kHp').style.width = '100%';
+    Engine.roar();
+    toast('⚠ 怪獣出現!非常線が張られました', 2600);
+    Nav.speak('警報。怪獣が出現しました。非常線を避けて飛行してください。イーキーでロケットを発射できます');
+  }
+  function removeKaiju(now) {
+    root.remove(kaiju.m.root, kaiju.cordon);
+    kaiju = null;
+    $('kaijuHud').classList.add('hidden');
+    nextKaijuAt = now + rnd(...CONFIG.kaijuInterval) * 1000;
+  }
+  function defeatKaiju() {
+    const k = kaiju;
+    k.phase = 'die'; k.t = 0; k.fallDir = Math.random() < 0.5 ? 1 : -1;
+    k.cordon.visible = false;
+    $('kaijuHud').classList.add('hidden');
+    Engine.roar(); Engine.explode(1.2);
+    Delivery.addBonus(CONFIG.kaijuBonus);
+    toast(`🎉 怪獣撃退! ボーナス ¥${CONFIG.kaijuBonus.toLocaleString()}`, 3000);
+    Nav.speak(`怪獣を撃退しました。ボーナス${CONFIG.kaijuBonus}円です`);
+  }
+  function updateKaiju(dt, now, c) {
+    const k = kaiju, m = k.m;
+    k.t += dt;
+    if (k.phase === 'walk' || k.phase === 'leave') {
+      k.e += k.dir[0] * KAIJU_SPEED * dt; k.n += k.dir[1] * KAIJU_SPEED * dt; k.travel += KAIJU_SPEED * dt;
+      k.step += KAIJU_SPEED * dt / 9;
+      const s = Math.sin(k.step * Math.PI);
+      m.hips[0].rotation.x = s * 0.35; m.hips[1].rotation.x = -s * 0.35;
+      m.body.position.y = Math.abs(s) * 0.8;
+      const sign = Math.sign(s);
+      if (sign && sign !== k.lastSign) {        // 足音と地響き
+        k.lastSign = sign;
+        const d = Math.hypot(k.e - c[0], k.n - c[1]);
+        if (d < 700) { shake = Math.max(shake, 0.5 * (1 - d / 700)); Engine.thud(clamp(0.55 * (1 - d / 700), 0.05, 0.55)); }
+      }
+      if (k.phase === 'walk' && k.travel >= k.total) {
+        k.phase = 'leave'; k.cordon.visible = false;
+        $('kaijuHud').classList.add('hidden');
+        toast('怪獣が去っていきます。非常線解除', 2200);
+      }
+      if (k.phase === 'leave') { k.sink += 6 * dt; if (k.sink > 90) { removeKaiju(now); return; } }
+    } else if (k.phase === 'die') {
+      m.root.rotation.z = Math.min(1.45, k.t * 0.7) * k.fallDir;
+      if (k.t < 2.6 && Math.random() < dt * 6) {
+        boom(k.e + rnd(-15, 15), k.n + rnd(-15, 15), rnd(10, 60), rnd(8, 16));
+        Engine.explode(0.6);
+      }
+      if (k.t > 2.6) k.sink += 10 * dt;
+      if (k.sink > 90) { removeKaiju(now); return; }
+    }
+    m.tail.forEach((t, i) => (t.rotation.y = Math.sin(now * 0.0015 + i * 0.7) * 0.12));
+    // 首を車の方へ向ける
+    const kb = Math.atan2(k.dir[0], k.dir[1]);
+    const diff = ((Math.atan2(c[0] - k.e, c[1] - k.n) - kb + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    m.head.rotation.y = -clamp(diff, -0.9, 0.9);
+    k.roarT -= dt;
+    m.jaw.rotation.x = k.roarT > 0 ? 0.45 : 0.05;
+    k.flash = Math.max(0, k.flash - dt * 4);
+    m.skin.emissiveIntensity = k.flash;
+
+    place(m.root, k.e, k.n, -k.sink, c);
+    m.root.rotation.y = -kb;
+    place(k.cordon, k.e, k.n, 0, c);
+
+    if (k.phase === 'walk') {
+      // 怪獣が歩いてきて車が非常線の内側に入ったら外へ押し出す
+      const d = Math.hypot(c[0] - k.e, c[1] - k.n);
+      if (d < CORDON_R + 1) {
+        const ux = d > 0.1 ? (c[0] - k.e) / d : 1, uy = d > 0.1 ? (c[1] - k.n) / d : 0;
+        [car.lng, car.lat] = toLL(k.e + ux * (CORDON_R + 1.5), k.n + uy * (CORDON_R + 1.5));
+        cordonMsg(now);
+      }
+      $('kHp').style.width = (k.hp / KAIJU_HP * 100) + '%';
+      $('kDist').textContent = ` ・ ${Math.round(d)} m`;
+    }
+  }
+  function cordonMsg(now) {
+    if (now - lastCordonMsg < 2500) return;
+    lastCordonMsg = now;
+    toast('🚧 非常線!立入禁止', 1200);
+  }
+  // physics から:この位置は非常線の内側か
+  function cordonHit(lng, lat) {
+    if (!kaiju || kaiju.phase !== 'walk' || !origin) return false;
+    const p = toEN(lng, lat);
+    const hit = Math.hypot(p[0] - kaiju.e, p[1] - kaiju.n) < CORDON_R;
+    if (hit) cordonMsg(performance.now());
+    return hit;
+  }
+
+  /* ---------- ロケット弾 ---------- */
+  function buildRocket() {
+    const g = new THREE.Group();
+    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, metalness: 0.4, roughness: 0.35 });
+    const red = new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 });
+    const bodyG = new THREE.CylinderGeometry(0.2, 0.2, 2.2, 10); bodyG.rotateX(Math.PI / 2);
+    g.add(new THREE.Mesh(bodyG, white));
+    const noseG = new THREE.ConeGeometry(0.2, 0.6, 10); noseG.rotateX(-Math.PI / 2);
+    const nose = new THREE.Mesh(noseG, red); nose.position.z = -1.4; g.add(nose);
+    for (const r of [0, Math.PI / 2]) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.45), red);
+      fin.position.z = 0.85; fin.rotation.z = r; g.add(fin);
+    }
+    const flameG = new THREE.ConeGeometry(0.18, 1.4, 10); flameG.rotateX(Math.PI / 2); flameG.translate(0, 0, 0.7);
+    const flame = new THREE.Mesh(flameG, new THREE.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    flame.position.z = 1.1; g.add(flame);
+    g.scale.setScalar(1.3);
+    return g;
+  }
+  function fire(c) {
+    const h = car.heading, fx = Math.sin(h), fy = Math.cos(h), rx = Math.cos(h), ry = -Math.sin(h);
+    rocketSide = -rocketSide;
+    const obj = buildRocket(); root.add(obj);
+    rockets.push({
+      obj, e: c[0] + fx * 4 + rx * rocketSide * 1.3, n: c[1] + fy * 4 + ry * rocketSide * 1.3, alt: car.alt + 1.3,
+      ve: fx * 80 + car.vx, vn: fy * 80 + car.vy, vz: 2, t: 0, puffT: 0, homing: locked,
+    });
+    Engine.rocket();
+  }
+  function updateRockets(dt, c, now) {
+    for (let i = rockets.length - 1; i >= 0; i--) {
+      const r = rockets[i];
+      r.t += dt;
+      let speed = Math.min(150, Math.hypot(r.ve, r.vn, r.vz) + 120 * dt);
+      let dir = new THREE.Vector3(r.ve, r.vn, r.vz).normalize();     // (東, 北, 上)
+      if (r.homing && kaiju && kaiju.phase === 'walk') {
+        const want = new THREE.Vector3(kaiju.e - r.e, kaiju.n - r.n, AIM_ALT - r.alt).normalize();
+        dir.lerp(want, Math.min(1, dt * 4)).normalize();
+      }
+      r.ve = dir.x * speed; r.vn = dir.y * speed; r.vz = dir.z * speed;
+      r.e += r.ve * dt; r.n += r.vn * dt; r.alt += r.vz * dt;
+      // 煙
+      r.puffT -= dt;
+      if (r.puffT <= 0) { r.puffT = 0.035; smoke(r.e, r.n, r.alt); }
+      // 当たり判定
+      let hit = false;
+      if (kaiju && kaiju.phase === 'walk') {
+        const dh = Math.hypot(r.e - kaiju.e, r.n - kaiju.n);
+        if (dh < BODY_R && r.alt > BODY_LO && r.alt < BODY_HI) {
+          const head = r.alt > HEAD_ALT;
+          boom(r.e, r.n, r.alt, head ? 11 : 8);
+          Engine.explode(0.8);
+          kaiju.hp -= head ? 2 : 1; kaiju.flash = 1.5;
+          if (head) toast('💥 ヘッドショット!', 700);
+          if (!kaiju.roared2 && kaiju.hp <= KAIJU_HP / 2) { kaiju.roared2 = true; kaiju.roarT = 2.5; Engine.roar(); }
+          if (kaiju.hp <= 0) defeatKaiju();
+          hit = true;
+        }
+      }
+      for (let j = crows.length - 1; j >= 0 && !hit; j--) {
+        const k = crows[j];
+        if (Math.hypot(r.e - k.e, r.n - k.n, r.alt - k.alt) < 4) { killCrow(j); toast('🐦 カラス撃墜', 700); hit = true; }
+      }
+      if (!hit && r.alt < 0) { boom(r.e, r.n, 0, 5); Engine.explode(0.4); hit = true; }
+      if (hit || r.t > 5) { root.remove(r.obj); rockets.splice(i, 1); continue; }
+      place(r.obj, r.e, r.n, r.alt, c);
+      r.obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), sceneDir(r.ve, r.vn, r.vz));
+    }
+  }
+
+  /* ---------- 煙・爆発 ---------- */
+  function smoke(e, n, alt) {
+    if (puffs.length > 220) return;
+    const obj = new THREE.Mesh(A.smokeG, new THREE.MeshBasicMaterial({ color: 0xd8d8d8, transparent: true, opacity: 0.5, depthWrite: false }));
+    root.add(obj);
+    puffs.push({ obj, e, n, alt, t: 0, life: 1.1 });
+  }
+  function boom(e, n, alt, size, color = 0xff8a1f) {
+    const g = new THREE.Group();
+    const outer = new THREE.Mesh(A.boomG, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const core = new THREE.Mesh(A.boomG, new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+    core.scale.setScalar(0.55);
+    g.add(outer, core); root.add(g);
+    booms.push({ obj: g, e, n, alt, t: 0, life: 0.7, size });
+  }
+  function updateFx(dt, c) {
+    for (let i = puffs.length - 1; i >= 0; i--) {
+      const p = puffs[i]; p.t += dt;
+      const k = p.t / p.life;
+      if (k >= 1) { root.remove(p.obj); p.obj.material.dispose(); puffs.splice(i, 1); continue; }
+      p.alt += dt * 1.5;
+      p.obj.scale.setScalar(0.6 + k * 2.6);
+      p.obj.material.opacity = 0.5 * (1 - k);
+      place(p.obj, p.e, p.n, p.alt, c);
+    }
+    for (let i = booms.length - 1; i >= 0; i--) {
+      const b = booms[i]; b.t += dt;
+      const k = b.t / b.life;
+      if (k >= 1) { root.remove(b.obj); b.obj.children.forEach((m) => m.material.dispose()); booms.splice(i, 1); continue; }
+      b.obj.scale.setScalar(b.size * (0.3 + k));
+      b.obj.children.forEach((m) => (m.material.opacity = 1 - k));
+      place(b.obj, b.e, b.n, b.alt, c);
+    }
+  }
+
+  /* ---------- ロックオン表示 ---------- */
+  function updateLock(c) {
+    const el = $('lockon');
+    locked = false;
+    if (!kaiju || kaiju.phase !== 'walk' || !carLayer.lastProj) { el.classList.add('hidden'); return; }
+    const de = kaiju.e - c[0], dn = kaiju.n - c[1], d = Math.hypot(de, dn);
+    const ang = ((Math.atan2(de, dn) - car.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    locked = Math.abs(ang) < 40 * DEG && d < 900;
+    // 怪獣の胸のあたりを画面座標へ
+    const S = V.scale, v = new THREE.Vector3(de / S, (AIM_ALT - car.alt) / S, -dn / S);
+    const e = carLayer.lastProj.elements;
+    const w = e[3] * v.x + e[7] * v.y + e[11] * v.z + e[15];
+    if (w <= 0) { el.classList.add('hidden'); return; }
+    v.applyMatrix4(carLayer.lastProj);
+    const cv = map.getCanvas(), x = (v.x + 1) / 2 * cv.clientWidth, y = (1 - v.y) / 2 * cv.clientHeight;
+    if (x < -50 || y < -50 || x > cv.clientWidth + 50 || y > cv.clientHeight + 50) { el.classList.add('hidden'); return; }
+    el.style.left = x + 'px'; el.style.top = y + 'px';
+    el.classList.remove('hidden');
+    el.classList.toggle('free', !locked);
+  }
+
+  /* ---------- スマホの地図 ---------- */
+  function updateMini(now) {
+    if (now - lastMini < 250) return;
+    lastMini = now;
+    const f = [];
+    if (kaiju && kaiju.phase === 'walk') {
+      const ring = [];
+      for (let i = 0; i <= 36; i++) {
+        const a = i / 36 * Math.PI * 2;
+        ring.push(toLL(kaiju.e + Math.sin(a) * CORDON_R, kaiju.n + Math.cos(a) * CORDON_R));
+      }
+      f.push({ type: 'Feature', properties: { k: 'cordon' }, geometry: { type: 'Polygon', coordinates: [ring] } });
+      f.push({ type: 'Feature', properties: { k: 'kaiju' }, geometry: { type: 'Point', coordinates: toLL(kaiju.e, kaiju.n) } });
+    }
+    for (const k of crows) f.push({ type: 'Feature', properties: { k: 'crow' }, geometry: { type: 'Point', coordinates: toLL(k.e, k.n) } });
+    Mini.setHazards({ type: 'FeatureCollection', features: f });
+  }
+
+  function clearAll() {
+    if (root) while (root.children.length) root.remove(root.children[0]);
+    crows = []; drops = []; rockets = []; puffs = []; booms = []; kaiju = null;
+    active = false; locked = false;
+    $('kaijuHud').classList.add('hidden');
+    $('lockon').classList.add('hidden');
+    Mini.setHazards(EMPTY_FC);
+  }
+
+  function update(now, dt) {
+    const want = CONFIG.flyHazards && V.fly && flight.phase === 'fly';
+    if (!want) { if (active) clearAll(); return; }
+    if (!ensureRoot()) return;
+    if (!active) {
+      active = true; origin = [car.lng, car.lat];
+      nextCrowAt = now + 8000; nextKaijuAt = now + CONFIG.kaijuFirstDelay * 1000;
+    }
+    root.scale.setScalar(1 / V.scale);    // ここから下はメートルで置ける
+    const c = carEN();
+    if (now > nextCrowAt) { spawnCrows(now); nextCrowAt = now + rnd(5000, 9000); }
+    if (!kaiju && now > nextKaijuAt) spawnKaiju(now);
+    fireCd -= dt;
+    if (keys.fire && fireCd <= 0) {
+      if (kaiju && kaiju.phase === 'walk') { fire(c); fireCd = 0.3; }
+      else if (now - lastNoFireMsg > 3000) { lastNoFireMsg = now; toast('ロケットは怪獣の出現中だけ使えます', 1200); }
+    }
+    updateCrows(dt, now, c);
+    updateDrops(dt, c);
+    if (kaiju) updateKaiju(dt, now, c);
+    updateRockets(dt, c, now);
+    updateFx(dt, c);
+    updateLock(c);
+    updateMini(now);
+  }
+
+  return {
+    update, cordonHit, clear: clearAll,
+    // デバッグ用(コンソールから hazards.kaiju() で即出現)
+    kaiju: () => { if (active && !kaiju) spawnKaiju(performance.now()); },
+    crows: () => { if (active) spawnCrows(performance.now()); },
+    state: () => ({
+      active, crows: crows.length, drops: drops.length, rockets: rockets.length, locked,
+      kaiju: kaiju && { hp: kaiju.hp, phase: kaiju.phase, ll: toLL(kaiju.e, kaiju.n) },
+    }),
+  };
+})();
+window.hazards = Hazards;  // デバッグ用
+
+// デバッグ・動画撮影用(自動運転などで使う)
+window.debug = {
+  keys,
+  setCollisions(v) { collisions = !!v; $('colBtn').textContent = '🏢 衝突 ' + (collisions ? 'ON' : 'OFF'); },
+  setVehicle: (id) => setVehicle(id, true),
+  warp: (s) => warp(s),
+  navRoute: () => Nav.getRoute(),
+  mini: Mini.map,
+  flight,
+};
+
+/* ---------- 建物衝突 ---------- */
+function hitsBuilding(lng, lat) {
+  if (!collisions || !buildingLayers.length) return false;
+  const p = map.project([lng, lat]);
+  const c = map.getCanvas();
+  if (p.x < 0 || p.y < 0 || p.x > c.clientWidth || p.y > c.clientHeight) return false;
+  let feats;
+  try { feats = map.queryRenderedFeatures([[p.x - 3, p.y - 3], [p.x + 3, p.y + 3]], { layers: buildingLayers }); }
+  catch (e) { return false; }
+  for (const f of feats) {
+    if (!pointInGeometry([lng, lat], f.geometry)) continue;
+    // 空を飛んでいるときは、建物より高ければ当たらない
+    const p = f.properties || {};
+    const h = Number(p.render_height ?? p.height ?? 10);
+    if (car.alt > 0 && car.alt >= h) continue;
+    return true;
+  }
+  return false;
+}
+
+/* ---------- 物理 ---------- */
+const GEARS = [0, 22, 45, 75, 110, 145, 999];
+let rpm = 900;
+
+// 空飛ぶ車の上下方向
+function flightStep(dt) {
+  const C = V;
+  flight.t += dt;
+  if (flight.phase === 'takeoff') {
+    if (flight.t < 1.2) {                 // 地上でジェット点火(だんだん強く)
+      flight.thrust = flight.t / 1.2 * 0.7;
+      car.vz = 0;
+    } else {                              // 浮上してホバリング高度へ
+      flight.thrust = lerp(flight.thrust, 0.9, Math.min(1, dt * 4));
+      car.vz = lerp(car.vz, clamp((C.hoverAlt - car.alt) * 1.1, 0, 3), Math.min(1, dt * 3));
+    }
+    car.alt = Math.max(0, car.alt + car.vz * dt);
+    if (car.alt > C.hoverAlt - 0.4 && flight.gear > 0.99) {
+      flight.phase = 'fly';
+      toast('🛸 飛行モード  F 上昇 / V 下降', 2400);
+    }
+  } else {
+    const up = keys.fup ? 1 : 0, dn = keys.fdown ? 1 : 0;
+    car.vz += (up - dn) * C.climb * dt;
+    car.vz *= Math.exp(-(up || dn ? 0.8 : 3) * dt);   // 何も押さなければその高さでホバリング
+    car.vz = clamp(car.vz, -20, 20);
+    car.alt += car.vz * dt;
+    if (car.alt <= 0) { car.alt = 0; car.vz = Math.max(0, car.vz); }
+    if (car.alt >= C.maxAlt) { car.alt = C.maxAlt; car.vz = Math.min(0, car.vz); }
+    const target = car.alt <= 0.01 && !up ? 0.12 : clamp(0.5 + car.vz * 0.03 + up * 0.4 - dn * 0.25, 0.15, 1);
+    flight.thrust = lerp(flight.thrust, target, Math.min(1, dt * 6));
+  }
+  // 浮いたらタイヤ収納、低くなったら出す(約1.2秒のアニメ)
+  const gearTarget = car.alt > C.gearUpAlt ? 1 : 0;
+  flight.gear = clamp(flight.gear + Math.sign(gearTarget - flight.gear) * dt / 1.2, 0, 1);
+}
+
+function physics(dt) {
+  const C = V;   // 今の乗り物の走行性能
+  if (C.fly) flightStep(dt);
+  const lock = C.fly && flight.phase === 'takeoff';   // 離陸中は操作できない
+  const thr = keys.up && !lock ? 1 : 0, brk = keys.down && !lock ? 1 : 0, hb = !!keys.hb && !lock;
+  const steerIn = lock ? 0 : (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const maxV = C.maxSpeedKmh / 3.6, maxR = C.maxReverseKmh / 3.6;
+
+  const maxSteer = lerp(C.maxSteer, C.minSteer, clamp(Math.abs(car.vf) / 35, 0, 1));
+  car.steer += (steerIn * maxSteer - car.steer) * Math.min(1, dt * (steerIn ? 6 : 9));
+
+  const yawRate = car.vf / C.wheelbase * Math.tan(car.steer) * (hb ? 1.35 : 1);
+  car.heading += yawRate * dt;
+
+  const fx = Math.sin(car.heading), fy = Math.cos(car.heading);
+  const rx = Math.cos(car.heading), ry = -Math.sin(car.heading);
+  let vf = car.vx * fx + car.vy * fy;
+  let vr = car.vx * rx + car.vy * ry;
+
+  let a = 0;
+  if (thr) a += vf < -0.3 ? C.brake : C.accel * Math.max(0, 1 - (vf / maxV) ** 2);
+  if (brk) a -= vf > 0.3 ? C.brake : C.reverseAccel * Math.max(0, 1 - (-vf / maxR));
+  a -= vf * Math.abs(vf) * 0.0011 + vf * 0.04;
+  if (hb) a -= Math.sign(vf) * 5;
+  vf += a * dt;
+  if (!thr && !brk && Math.abs(vf) < 0.25) vf = 0;
+  if (hb && Math.abs(vf) < 0.4) vf = 0;
+
+  vr *= Math.exp(-(hb ? C.handbrakeGrip : C.grip) * dt);
+  car.vx = fx * vf + rx * vr;
+  car.vy = fy * vf + ry * vr;
+  car.vf = vf;
+
+  if (C.lean && (!C.fly || car.alt > 1)) {
+    // 二輪・飛行中:遠心力と釣り合う角度でカーブの内側へ傾く(バンク)
+    const lean = -clamp(Math.atan(vf * yawRate / 9.81), -C.lean, C.lean);
+    car.roll = lerp(car.roll, lean, Math.min(1, dt * 5));
+    car.pitch = lerp(car.pitch, clamp(-a * 0.004, -0.03, 0.03), Math.min(1, dt * 6));
+  } else {
+    car.roll = lerp(car.roll, clamp(vf * yawRate * 0.012, -0.08, 0.08), Math.min(1, dt * 6));
+    car.pitch = lerp(car.pitch, clamp(-a * 0.006, -0.05, 0.05), Math.min(1, dt * 6));
+  }
+
+  const dE = car.vx * dt, dN = car.vy * dt;
+  const nLat = car.lat + dN / M_PER_DEG_LAT;
+  const nLng = car.lng + dE / mPerDegLng(car.lat);
+
+  // 怪獣の非常線(空飛ぶミニ):高さに関係なく入れない → 跳ね返す
+  if (C.fly && Hazards.cordonHit(nLng, nLat)) {
+    car.vx *= -0.3; car.vy *= -0.3; car.vf *= -0.3;
+    shake = Math.max(shake, 0.25);
+    return thr;
+  }
+  if (collisions && Math.abs(dE) + Math.abs(dN) > 1e-4) {
+    const sg = vf >= 0 ? 1 : -1, half = C.length / 2;
+    const bx = nLng + (fx * half * sg) / mPerDegLng(car.lat);
+    const by = nLat + (fy * half * sg) / M_PER_DEG_LAT;
+    if (hitsBuilding(bx, by)) {
+      const impact = Math.abs(vf) * 3.6;
+      car.vx *= -0.25; car.vy *= -0.25; car.vf *= -0.25;
+      if (impact > 8) {
+        toast(impact > 50 ? '💥 ガシャーン!' : 'ドンッ'); Engine.thud(); shake = Math.min(1, impact / 60);
+        Delivery.onCrash(impact);
+      }
+      return thr;
+    }
+  }
+  car.odo += Math.hypot(dE, dN);
+  car.lng = nLng; car.lat = nLat;
+  return thr;
+}
+
+function updateCarObject(dt) {
+  if (!carHolder) return;
+  carHolder.rotation.y = -car.heading;
+  if (carObj.body) { carObj.body.rotation.z = car.roll; carObj.body.rotation.x = car.pitch; }
+  const spinD = (carObj.fly && flight.gear > 0.05) ? 0 : car.vf * dt / carObj.wheelRadius;   // 浮いたらタイヤは回さない
+  if (carObj.wheels) {
+    for (const k in carObj.wheels) carObj.wheels[k].spin.rotation.x -= spinD;
+    for (const k of carObj.steerKeys) carObj.wheels[k].pivot.rotation.y = -car.steer * (carObj.steerMul || 1);
+    if (carObj.crank) carObj.crank.rotation.x -= spinD * 0.45;   // 自転車のペダル
+  } else if (gltfWheels) {
+    for (const k in gltfWheels) gltfWheels[k].rotation.x -= spinD;
+  }
+  carObj.headLights.forEach((m) => (m.material.emissiveIntensity = lightsOn ? 2.2 : 0.15));
+  const braking = keys.down && car.vf > 0.3;
+  carObj.tailLights.forEach((m) => (m.material.emissiveIntensity = braking ? 2.5 : lightsOn ? 0.9 : 0.25));
+
+  // 影は地面に残し、高く飛ぶほど薄く
+  if (shadowMesh) {
+    shadowMesh.position.y = 0.03 - car.alt / V.scale;
+    shadowMesh.material.opacity = clamp(1 - car.alt / 120, 0.2, 1);
+  }
+  if (carObj.fly) updateFlyVisuals();
+}
+
+function updateFlyVisuals() {
+  const o = carObj, th = flight.thrust;
+  // タイヤ収納:内側へ倒しながら持ち上げて小さくし、最後は隠す
+  const g = flight.gear * flight.gear * (3 - 2 * flight.gear);   // smoothstep
+  for (const k in o.wheels) {
+    const w = o.wheels[k], b = w.base, sx = Math.sign(b.x);
+    w.pivot.position.set(lerp(b.x, b.x * 0.55, g), lerp(b.y, b.y + 0.2, g), b.z);
+    w.pivot.rotation.z = -sx * g * Math.PI / 2;
+    w.pivot.scale.setScalar(1 - 0.3 * g);
+    w.pivot.visible = g < 0.98;
+  }
+  // 下向きジェットの炎(ちらつき付き)
+  for (const f of o.flames) {
+    f.visible = th > 0.03;
+    const w = 0.8 + th * 0.45;
+    f.scale.set(w, (0.3 + th * 1.5) * (0.85 + Math.random() * 0.3), w);
+  }
+  // 後ろのブースター(アクセルで噴く)
+  const boost = flight.phase === 'fly' && car.alt > 0.5 ? (keys.up ? 1 : 0.15) : 0;
+  for (const f of o.rearFlames) {
+    f.visible = boost > 0.05;
+    f.scale.set(1, 1, (0.4 + boost * 1.4) * (0.85 + Math.random() * 0.3));
+  }
+  o.glowM.emissiveIntensity = 0.6 + th * 2.2;
+  // ホバリング中のふわふわ
+  o.body.position.y = car.alt > 0.5 ? Math.sin(performance.now() * 0.0025) * 0.05 : 0;
+  // 地面の照り返し
+  if (glowMesh) {
+    glowMesh.position.y = 0.04 - car.alt / V.scale;
+    glowMesh.material.opacity = th * clamp(1 - car.alt / 15, 0, 1) * 0.85;
+  }
+}
+
+function updateCamera(dt) {
+  const mode = CONFIG.cameraModes[camMode];
+  camBearing = lerpAngleDeg(camBearing, car.heading / DEG, 1 - Math.exp(-dt * (camMode === 2 ? 6 : 3.2)));
+  const speedZoom = Math.min(Math.abs(car.vf) * 3.6 / V.maxSpeedKmh, 1) * 0.9 - V.camZoom;
+  const H = map.getCanvas().clientHeight;
+  let center = [car.lng, car.lat];
+  let zoom = clamp(mode.zoom + zoomOffset - speedZoom, 14, 22);
+  if (car.alt > 0.05) {
+    // 空中の車を画面の同じ位置・同じ大きさに見せる:
+    //  ・カメラの注視点(地面)を、視線が車を通る位置 = 車の真下から alt × tan(pitch) 前方へずらす
+    //  ・カメラと車の距離が地上と同じになるよう、視線方向に alt / cos(pitch) だけ引く(= ズームアウト)
+    const pr = mode.pitch * DEG;
+    const mpp = 40075016.686 * Math.cos(car.lat * DEG) / (512 * 2 ** zoom);   // 1px あたりの m
+    const D0 = 1.5 * H * mpp;                                                 // カメラ〜注視点の距離(fov 36.87°)
+    zoom = clamp(zoom - Math.log2((D0 + car.alt / Math.max(0.05, Math.cos(pr))) / D0), 8, 22);
+    const fwd = car.alt * Math.tan(pr), b = camBearing * DEG;
+    center = [car.lng + Math.sin(b) * fwd / mPerDegLng(car.lat), car.lat + Math.cos(b) * fwd / M_PER_DEG_LAT];
+  }
+  if (shake > 0.01) {
+    center = [center[0] + (Math.random() - 0.5) * shake * 1e-5, center[1] + (Math.random() - 0.5) * shake * 1e-5];
+    shake *= Math.exp(-dt * 8);
+  }
+  map.jumpTo({
+    center, bearing: camBearing, pitch: mode.pitch,
+    zoom,
+    padding: { top: H * mode.pad, bottom: 0, left: 0, right: 0 },
+  });
+}
+
+function updateHUD(thr) {
+  const kmh = Math.abs(car.vf) * 3.6;
+  const G = V.gears;
+  let g = 1, target;
+  if (V.fly) {
+    // ジェット:噴射の強さと速度でタービンの回転が上がる
+    target = V.maxRpm * (0.25 + 0.5 * flight.thrust + 0.25 * kmh / V.maxSpeedKmh);
+  } else if (G) {
+    while (g < G.length - 1 && kmh > G[g]) g++;
+    const lo = G[g - 1], hi = G[g] === 999 ? V.maxSpeedKmh * 1.1 : G[g];
+    const frac = clamp((kmh - lo) / (hi - lo), 0, 1);
+    target = kmh < 2 ? (thr ? V.maxRpm * 0.35 : V.idleRpm) : V.maxRpm * (0.23 + frac * 0.68);
+  } else {
+    // CVT(スクーター):発進で回転が上がり、そのまま速度に合わせてじわじわ上がる
+    target = kmh < 2 ? (thr ? V.maxRpm * 0.5 : V.idleRpm) : V.maxRpm * (0.55 + 0.4 * kmh / V.maxSpeedKmh) * (thr ? 1 : 0.8);
+  }
+  rpm = lerp(rpm, target, 0.15);
+  Engine.update(rpm, thr);
+  $('spd').textContent = Math.round(kmh);
+  if (V.fly) {
+    $('gearLbl').textContent = 'ALT';
+    $('gear').textContent = Math.round(car.alt) + ' m';
+  } else {
+    $('gearLbl').textContent = 'GEAR';
+    $('gear').textContent = car.vf < -0.3 ? 'R' : kmh < 1 ? 'N' : (G ? g : 'D');
+  }
+  $('rpmbar').firstElementChild.style.width = clamp(rpm / V.maxRpm * 100, 0, 100) + '%';
+  $('odo').textContent = (car.odo / 1000).toFixed(2) + ' km';
+}
+
+let last = 0;
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  let thr = 0;
+  const sub = Math.max(1, Math.ceil(Math.abs(car.vf) * dt / 0.8));
+  for (let i = 0; i < sub; i++) thr = physics(dt / sub);
+  updateCarObject(dt);
+  updateCamera(dt);
+  updateHUD(thr);
+  Mini.update(now);
+  Nav.update(now);
+  Delivery.update(now, dt);
+  Hazards.update(now, dt);
+  if (started) rafId = requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
